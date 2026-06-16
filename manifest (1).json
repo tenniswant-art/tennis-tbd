@@ -1,0 +1,24 @@
+{
+  "name": "테니스병동 TBD",
+  "short_name": "TBD",
+  "description": "테니스 모임 관리 앱",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f2d5e",
+  "theme_color": "#0f2d5e",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://api.iconify.design/twemoji/tennis.svg?width=192&height=192",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://api.iconify.design/twemoji/tennis.svg?width=512&height=512",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
