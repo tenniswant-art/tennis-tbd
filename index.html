@@ -741,10 +741,12 @@ G('multi-ok').addEventListener('click',()=>{
   multiData.schedule.forEach(rd=>{rd.games.forEach(g=>{if(!S.matches)S.matches=[];S.matches.push({id:'g'+(t++),sessionId:mSess,type:g.gtype,teamA:g.t1.map(m=>m.id),teamB:g.t2.map(m=>m.id),winners:[],losers:[],score:'',pending:true,round:rd.round,court:g.court,time:t});});});
   saveS();cm('mo-multi');rMatch();
 });
-function upstrip(){
+function upstrip(keepScroll){
   const ts=iso(new Date());
   G('tlbl').textContent=new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'long'});
-  const el=G('ustrip');el.innerHTML='';
+  const el=G('ustrip');
+  const prevScroll=el.scrollLeft;
+  el.innerHTML='';
   const all=[...(S.sessions||[])].sort((a,b)=>a.date.localeCompare(b.date));
   // 선택된 일정이 없거나 삭제됐으면 → 오늘 이후 첫 일정(없으면 가장 최근 지난 일정) 자동 선택
   if(!selSid||!all.find(s=>s.id===selSid)){
@@ -763,15 +765,16 @@ function upstrip(){
     if(isPast){d.style.opacity='0.5';}
     if(sel){d.style.boxShadow='0 0 0 2px #e8b923';d.style.background='rgba(232,185,35,.25)';d.style.opacity='1';}
     d.innerHTML=`<div class="udate">${tod?'🎾 오늘':isPast?'✓ '+fmts(s.date):fmts(s.date)}</div><div class="ucourt">${s.court}</div>${s.time?`<div class="utime">${s.time}</div>`:''}<div class="upills"><span class="upill" style="background:rgba(34,197,94,.35)">참${yes}</span><span class="upill" style="background:rgba(239,68,68,.35)">불${no}</span><span class="upill" style="background:rgba(232,185,35,.35)">미${pend}</span></div>`;
-    d.addEventListener('click',()=>{const dt=new Date(s.date+'T00:00:00');calY=dt.getFullYear();calM=dt.getMonth();selD=s.date;selSid=s.id;mSess=s.id;pnSess=s.id;picks={};upstrip();if(page==='match'){rMatch();}else if(page==='penalty'){rPenalty();}else if(page==='stats'||page==='chat'||page==='admin'){/* 탭 유지 */}else{goPage('cal');}});
+    d.addEventListener('click',()=>{const dt=new Date(s.date+'T00:00:00');calY=dt.getFullYear();calM=dt.getMonth();selD=s.date;selSid=s.id;mSess=s.id;pnSess=s.id;picks={};upstrip(true);if(page==='match'){rMatch();}else if(page==='penalty'){rPenalty();}else if(page==='stats'||page==='chat'||page==='admin'){/* 탭 유지 */}else{goPage('cal');}});
     el.appendChild(d);
     // 스크롤 목표: 선택된 카드 > 오늘 > 첫 미래 일정
     if(sel)scrollTarget=d;
     else if(!scrollTarget&&tod)scrollTarget=d;
     else if(!scrollTarget&&!isPast)scrollTarget=d;
   });
-  // 접속/갱신 시 목표 카드가 보이도록 가로 스크롤 (지난 일정은 왼쪽에 숨김)
-  if(scrollTarget){requestAnimationFrame(()=>{const left=scrollTarget.offsetLeft-8;el.scrollTo({left:left>0?left:0,behavior:'auto'});});}
+  // keepScroll(클릭 등): 현재 위치 유지 / 아니면(첫 로드·갱신): 목표 카드로 자동 스크롤
+  if(keepScroll){el.scrollLeft=prevScroll;}
+  else if(scrollTarget){requestAnimationFrame(()=>{const left=scrollTarget.offsetLeft-8;el.scrollTo({left:left>0?left:0,behavior:'auto'});});}
 }
 // 달력 그리드 좌우 스와이프 → 월 전환
 function attachSwipe(grid){
