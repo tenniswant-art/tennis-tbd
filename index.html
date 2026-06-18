@@ -226,12 +226,13 @@ h2{font-size:16px;font-weight:600;margin-bottom:12px}
 <button class="fab" id="fab"><i class="ti ti-plus"></i></button>
 <div class="ovl" id="mo-sess"><div class="modal"><h3>일정 추가</h3>
   <div class="fg"><label>날짜</label><input type="date" id="idate"></div>
-  <div class="fg"><label>시간</label><input type="time" id="itime" value="10:00"></div>
   <div class="fg"><label>코트</label><div class="court-btns" id="court-btns"></div><input type="text" id="icourt" placeholder="직접 입력 또는 위에서 선택"></div>
+  <div class="fg"><label>시간</label><input type="time" id="itime" value="10:00"></div>
   <div style="font-size:11px;color:var(--rd);min-height:16px;margin:-4px 0 8px" id="cerr"></div>
   <div class="mac"><button class="btn btno" id="msc">취소</button><button class="btn btng" id="mss">저장</button></div>
 </div></div>
 <div class="ovl" id="mo-courts"><div class="modal"><h3>🏟️ 코트 관리</h3>
+  <div style="font-size:11px;color:var(--mt);margin-bottom:10px;line-height:1.5">💡 코트별 시간을 정해두면, 일정 추가 때 그 코트를 누르면 시간이 자동으로 채워져요</div>
   <div id="courts-list" style="margin-bottom:12px"></div>
   <div style="display:flex;gap:6px"><input type="text" id="new-court" placeholder="새 코트 이름" style="flex:1;padding:8px 10px;border:.5px solid var(--bd);border-radius:7px;font-size:13px;background:var(--sf);color:var(--tx)"><button class="btn btng" style="width:auto;padding:8px 12px;font-size:12px;border-radius:7px" id="add-court-btn">추가</button></div>
   <button class="btn btno" style="margin-top:10px;width:100%" id="mo-courts-c">닫기</button>
@@ -269,7 +270,7 @@ const VAPID_PUB='BBACDo6IZOGiaegIuyGYQQRJyaUk9a7vGqM3AmMPnwrKv0N2efpqgprnhkblsHf
 const DEFAULT_COURTS=['잠실 A코트','잠실 B코트','올림픽공원','몽촌토성 코트','한강 코트'];
 const DEFAULT_BALLS={ball2:3000,ball3:4500}; // 2구·3구 기본 단가
 const SK='tennis_tbd_v2',CK='tennis_chat_v1',UK='tbd_user_v1';
-let S={sessions:[],members:[],matches:[],votes:{},fees:{},penalties:{},adminId:null,courts:[...DEFAULT_COURTS],actlog:[],ballPrices:{...DEFAULT_BALLS}};
+let S={sessions:[],members:[],matches:[],votes:{},fees:{},penalties:{},adminId:null,courts:[...DEFAULT_COURTS],actlog:[],ballPrices:{...DEFAULT_BALLS},courtTimes:{}};
 let CHAT={messages:[]};
 let page='cal',calY,calM,selD=null,selSid=null,vtab={},mSess=null,mType='singles',pnSess=null,stType='elo',stSort='elo';
 let myId=null,myName=null,picks={},pDel=null,pDelT=null,pSD=null,pST=null,assignData=null,teamSplitPicks={},teamSplitSel=[],assignRounds=4,assignMembers=[];
@@ -474,11 +475,12 @@ async function load(){
   if(!S.courts||!S.courts.length)S.courts=[...DEFAULT_COURTS];
   if(!S.actlog)S.actlog=[];
   if(!S.ballPrices)S.ballPrices={...DEFAULT_BALLS};
+  if(!S.courtTimes)S.courtTimes={};
   // 마이그레이션: 점수 없이 승패만 박힌 경기 → 미정으로 정리
   let _migrated=false;(S.matches||[]).forEach(m=>{if(!m.score&&m.winners&&m.winners.length){if(!m.teamA||!m.teamA.length){m.teamA=m.winners.slice();m.teamB=(m.losers||[]).slice();}m.winners=[];m.losers=[];m.pending=true;_migrated=true;}});
   if(!CHAT.messages)CHAT.messages=[];if(S.adminId===undefined)S.adminId=null;
   try{const r=await storage.get(UK,false);if(r?.value){const u=JSON.parse(r.value);const f=S.members.find(m=>m.id===u.id);if(f){myId=u.id;myName=u.name;}}}catch(e){}
-  onValue(ref(db,SK),snap=>{if(!snap.exists())return;const fresh=fixFB(snap.val());if(!fresh)return;S=fresh;if(!S.votes)S.votes={};if(!S.fees)S.fees={};if(!S.penalties)S.penalties={};if(!S.members)S.members=[];if(!S.sessions)S.sessions=[];if(!S.matches)S.matches=[];if(!S.courts||!S.courts.length)S.courts=[...DEFAULT_COURTS];if(!S.actlog)S.actlog=[];if(!S.ballPrices)S.ballPrices={...DEFAULT_BALLS};upstrip();render();updateNotiDots();});
+  onValue(ref(db,SK),snap=>{if(!snap.exists())return;const fresh=fixFB(snap.val());if(!fresh)return;S=fresh;if(!S.votes)S.votes={};if(!S.fees)S.fees={};if(!S.penalties)S.penalties={};if(!S.members)S.members=[];if(!S.sessions)S.sessions=[];if(!S.matches)S.matches=[];if(!S.courts||!S.courts.length)S.courts=[...DEFAULT_COURTS];if(!S.actlog)S.actlog=[];if(!S.ballPrices)S.ballPrices={...DEFAULT_BALLS};if(!S.courtTimes)S.courtTimes={};upstrip();render();updateNotiDots();});
   onValue(ref(db,CK),snap=>{if(!snap.exists())return;const fresh=fixFB(snap.val());if(!fresh||!fresh.messages)return;if(fresh.messages.length>CHAT.messages.length){CHAT=fresh;if(page==='chat'){rChat();scr();setSeen('chat',Date.now());}updateNotiDots();}});
   buildNav();
   G('loading').classList.add('hide');
@@ -594,8 +596,8 @@ function updateNotiDots(){
 }
 function buildNav(){const tabs=[{id:'cal',ic:'calendar-check'},{id:'match',ic:'swords'},{id:'stats',ic:'trophy'},{id:'penalty',ic:'coin'},{id:'chat',ic:'message-circle'}];G('mainnav').innerHTML=tabs.map(t=>`<button class="nb${t.id==='cal'?' on':''}" data-p="${t.id}"><i class="ti ti-${t.ic}"></i><div class="ndot"></div></button>`).join('');G('mainnav').addEventListener('click',e=>{const b=e.target.closest('.nb');if(b)goPage(b.dataset.p);});updateNotiDots();}
 function goPage(p){document.querySelectorAll('.pg,.chatpg').forEach(e=>e.classList.remove('on'));document.querySelectorAll('.nb').forEach(e=>e.classList.remove('on'));G('page-'+p).classList.add('on');const navBtn=G('mainnav').querySelector(`[data-p="${p}"]`);if(navBtn)navBtn.classList.add('on');page=p;G('fab').style.display=p==='cal'?'flex':'none';const app=document.querySelector('.app');if(p==='chat'){app.classList.add('chat-mode');rChat();setTimeout(scr,50);}else{app.classList.remove('chat-mode');}if(['cal','match','stats','chat'].includes(p))setSeen(p,Date.now());render();updateNotiDots();}
-function buildCourtBtns(){const el=G('court-btns');if(!el)return;el.innerHTML=(S.courts||[]).map(c=>`<button class="court-btn" data-court="${c}">${c}</button>`).join('');if(isAdmin())el.innerHTML+=`<button class="court-btn" style="background:var(--aml);border-color:var(--am);color:var(--amd)" id="manage-courts-btn">⚙️ 관리</button>`;el.querySelectorAll('[data-court]').forEach(b=>b.addEventListener('click',()=>G('icourt').value=b.dataset.court));const mb=el.querySelector('#manage-courts-btn');if(mb)mb.addEventListener('click',()=>{cm('mo-sess');openCourtsModal();});}
-function openCourtsModal(){const el=G('courts-list');el.innerHTML=(S.courts||[]).map((c,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:.5px solid var(--bd)"><span style="flex:1;font-size:13px">${c}</span><button class="ibtn" data-di="${i}"><i class="ti ti-trash"></i></button></div>`).join('');el.querySelectorAll('[data-di]').forEach(b=>b.addEventListener('click',()=>{S.courts.splice(parseInt(b.dataset.di),1);saveS();openCourtsModal();}));om('mo-courts');}
+function buildCourtBtns(){const el=G('court-btns');if(!el)return;el.innerHTML=(S.courts||[]).map(c=>`<button class="court-btn" data-court="${c}">${c}</button>`).join('');if(isAdmin())el.innerHTML+=`<button class="court-btn" style="background:var(--aml);border-color:var(--am);color:var(--amd)" id="manage-courts-btn">⚙️ 관리</button>`;el.querySelectorAll('[data-court]').forEach(b=>b.addEventListener('click',()=>{const c=b.dataset.court;G('icourt').value=c;const t=(S.courtTimes||{})[c];if(t)G('itime').value=t;}));const mb=el.querySelector('#manage-courts-btn');if(mb)mb.addEventListener('click',()=>{cm('mo-sess');openCourtsModal();});}
+function openCourtsModal(){const el=G('courts-list');el.innerHTML=(S.courts||[]).map((c,i)=>{const t=(S.courtTimes||{})[c]||'';return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:.5px solid var(--bd)"><span style="flex:1;font-size:13px">${c}</span><input type="time" data-ct="${encodeURIComponent(c)}" value="${t}" style="width:110px;padding:5px 6px;border:.5px solid var(--bd);border-radius:6px;font-size:12px;background:var(--sf);color:var(--tx)"><button class="ibtn" data-di="${i}"><i class="ti ti-trash"></i></button></div>`;}).join('');el.querySelectorAll('[data-di]').forEach(b=>b.addEventListener('click',()=>{S.courts.splice(parseInt(b.dataset.di),1);saveS();openCourtsModal();}));el.querySelectorAll('[data-ct]').forEach(inp=>inp.addEventListener('change',()=>{const c=decodeURIComponent(inp.dataset.ct);if(!S.courtTimes)S.courtTimes={};if(inp.value)S.courtTimes[c]=inp.value;else delete S.courtTimes[c];saveS();}));om('mo-courts');}
 G('add-court-btn').addEventListener('click',()=>{const v=G('new-court').value.trim();if(!v)return;if(!S.courts)S.courts=[];S.courts.push(v);G('new-court').value='';saveS();openCourtsModal();});
 G('mo-courts-c').addEventListener('click',()=>{cm('mo-courts');om('mo-sess');buildCourtBtns();});
 G('fab').addEventListener('click',()=>{G('idate').value=selD||iso(new Date());G('icourt').value='';G('cerr').textContent='';buildCourtBtns();om('mo-sess');});
