@@ -3,22 +3,35 @@
   "short_name": "TBD",
   "description": "테니스 모임 관리 앱",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0f2d5e",
   "theme_color": "#0f2d5e",
   "orientation": "portrait",
   "icons": [
     {
-      "src": "https://api.iconify.design/twemoji/tennis.svg?width=192&height=192",
+      "src": "/icon-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "https://api.iconify.design/twemoji/tennis.svg?width=512&height=512",
+      "src": "/icon-512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192-maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
