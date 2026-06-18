@@ -39,9 +39,10 @@ body{font-family:-apple-system,sans-serif;color:var(--tx);background:var(--sf)}
 .me-av{width:22px;height:22px;border-radius:6px;background:#e8b923;color:#0f2d5e;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center}
 .me-nm{color:#fff;font-size:12px;font-weight:600}
 .nav{background:var(--sf);margin:0 8px;border-radius:12px;border:.5px solid var(--bd);display:flex;position:sticky;top:6px;z-index:20;margin-top:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.1)}
-.nb{flex:1;padding:10px 2px 8px;color:var(--mt);background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px}
+.nb{flex:1;padding:10px 2px 8px;color:var(--mt);background:none;border:none;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;position:relative}
 .nb i{font-size:20px}.nb.on{color:var(--g)}
 .ndot{width:4px;height:4px;border-radius:50%}.nb.on .ndot{background:var(--g)}
+.ndot.noti{width:7px;height:7px;background:#ef4444!important;position:absolute;top:6px;margin-left:14px;box-shadow:0 0 0 2px var(--sf)}
 .pg{display:none;padding:14px}.pg.on{display:block}
 .chatpg{display:none;flex-direction:column;flex:1;min-height:0;overflow:hidden}.chatpg.on{display:flex}
 h2{font-size:16px;font-weight:600;margin-bottom:12px}
@@ -475,11 +476,11 @@ async function load(){
   let _migrated=false;(S.matches||[]).forEach(m=>{if(!m.score&&m.winners&&m.winners.length){if(!m.teamA||!m.teamA.length){m.teamA=m.winners.slice();m.teamB=(m.losers||[]).slice();}m.winners=[];m.losers=[];m.pending=true;_migrated=true;}});
   if(!CHAT.messages)CHAT.messages=[];if(S.adminId===undefined)S.adminId=null;
   try{const r=await storage.get(UK,false);if(r?.value){const u=JSON.parse(r.value);const f=S.members.find(m=>m.id===u.id);if(f){myId=u.id;myName=u.name;}}}catch(e){}
-  onValue(ref(db,SK),snap=>{if(!snap.exists())return;const fresh=fixFB(snap.val());if(!fresh)return;S=fresh;if(!S.votes)S.votes={};if(!S.fees)S.fees={};if(!S.penalties)S.penalties={};if(!S.members)S.members=[];if(!S.sessions)S.sessions=[];if(!S.matches)S.matches=[];if(!S.courts||!S.courts.length)S.courts=[...DEFAULT_COURTS];if(!S.actlog)S.actlog=[];if(!S.ballPrices)S.ballPrices={...DEFAULT_BALLS};upstrip();render();});
-  onValue(ref(db,CK),snap=>{if(!snap.exists())return;const fresh=fixFB(snap.val());if(!fresh||!fresh.messages)return;if(fresh.messages.length>CHAT.messages.length){CHAT=fresh;if(page==='chat'){rChat();scr();}}});
+  onValue(ref(db,SK),snap=>{if(!snap.exists())return;const fresh=fixFB(snap.val());if(!fresh)return;S=fresh;if(!S.votes)S.votes={};if(!S.fees)S.fees={};if(!S.penalties)S.penalties={};if(!S.members)S.members=[];if(!S.sessions)S.sessions=[];if(!S.matches)S.matches=[];if(!S.courts||!S.courts.length)S.courts=[...DEFAULT_COURTS];if(!S.actlog)S.actlog=[];if(!S.ballPrices)S.ballPrices={...DEFAULT_BALLS};upstrip();render();updateNotiDots();});
+  onValue(ref(db,CK),snap=>{if(!snap.exists())return;const fresh=fixFB(snap.val());if(!fresh||!fresh.messages)return;if(fresh.messages.length>CHAT.messages.length){CHAT=fresh;if(page==='chat'){rChat();scr();setSeen('chat',Date.now());}updateNotiDots();}});
   buildNav();
   G('loading').classList.add('hide');
-  if(_migrated&&myId)saveS();if(!myId){showSetup();}else{G('setup').classList.add('hide');updBadge();upstrip();render();setTimeout(initPush,1500);}
+  if(_migrated&&myId)saveS();if(!myId){showSetup();}else{G('setup').classList.add('hide');updBadge();upstrip();render();updateNotiDots();setTimeout(initPush,1500);}
 }
 function showSetup(){G('setup').classList.remove('hide');G('slist').innerHTML=(S.members||[]).map(m=>`<option value="${m.name}">`).join('');}
 G('si').addEventListener('input',function(){updatePinUI();});
@@ -561,15 +562,43 @@ function rSettings(){
   card.appendChild(save);
   el.appendChild(card);
 }
-function buildNav(){const tabs=[{id:'cal',ic:'calendar-check'},{id:'match',ic:'swords'},{id:'stats',ic:'trophy'},{id:'penalty',ic:'coin'},{id:'chat',ic:'message-circle'}];G('mainnav').innerHTML=tabs.map(t=>`<button class="nb${t.id==='cal'?' on':''}" data-p="${t.id}"><i class="ti ti-${t.ic}"></i><div class="ndot"></div></button>`).join('');G('mainnav').addEventListener('click',e=>{const b=e.target.closest('.nb');if(b)goPage(b.dataset.p);});}
-function goPage(p){document.querySelectorAll('.pg,.chatpg').forEach(e=>e.classList.remove('on'));document.querySelectorAll('.nb').forEach(e=>e.classList.remove('on'));G('page-'+p).classList.add('on');const navBtn=G('mainnav').querySelector(`[data-p="${p}"]`);if(navBtn)navBtn.classList.add('on');page=p;G('fab').style.display=p==='cal'?'flex':'none';const app=document.querySelector('.app');if(p==='chat'){app.classList.add('chat-mode');rChat();setTimeout(scr,50);}else{app.classList.remove('chat-mode');}render();}
+// ── 탭 알림 점 (남이 만든 안 본 변화)
+function getSeen(tab){try{return parseInt(localStorage.getItem('tbd_seen_'+tab))||0;}catch(e){return 0;}}
+function setSeen(tab,ts){try{localStorage.setItem('tbd_seen_'+tab,String(ts||Date.now()));}catch(e){}}
+function hasNoti(tab){
+  if(!myId)return false;
+  const seen=getSeen(tab);
+  if(tab==='cal'){
+    return (S.sessions||[]).some(s=>s.by&&s.by!==myId&&(s.createdAt||0)>seen);
+  }
+  if(tab==='match'){
+    return (S.matches||[]).some(m=>m.locked&&m.resultBy&&m.resultBy!==myId&&(m.resultAt||0)>seen);
+  }
+  if(tab==='stats'){
+    // 남이 입력한 새 경기 결과가 있으면 랭킹도 변동 → 알림
+    return (S.matches||[]).some(m=>m.locked&&m.resultBy&&m.resultBy!==myId&&(m.resultAt||0)>seen);
+  }
+  if(tab==='chat'){
+    return (CHAT.messages||[]).some(m=>m.name&&m.name!==myName&&(m.ts||0)>seen);
+  }
+  return false;
+}
+function updateNotiDots(){
+  ['cal','match','stats','chat'].forEach(tab=>{
+    const btn=G('mainnav').querySelector(`[data-p="${tab}"]`);
+    if(!btn)return;const dot=btn.querySelector('.ndot');if(!dot)return;
+    dot.classList.toggle('noti',hasNoti(tab)&&page!==tab);
+  });
+}
+function buildNav(){const tabs=[{id:'cal',ic:'calendar-check'},{id:'match',ic:'swords'},{id:'stats',ic:'trophy'},{id:'penalty',ic:'coin'},{id:'chat',ic:'message-circle'}];G('mainnav').innerHTML=tabs.map(t=>`<button class="nb${t.id==='cal'?' on':''}" data-p="${t.id}"><i class="ti ti-${t.ic}"></i><div class="ndot"></div></button>`).join('');G('mainnav').addEventListener('click',e=>{const b=e.target.closest('.nb');if(b)goPage(b.dataset.p);});updateNotiDots();}
+function goPage(p){document.querySelectorAll('.pg,.chatpg').forEach(e=>e.classList.remove('on'));document.querySelectorAll('.nb').forEach(e=>e.classList.remove('on'));G('page-'+p).classList.add('on');const navBtn=G('mainnav').querySelector(`[data-p="${p}"]`);if(navBtn)navBtn.classList.add('on');page=p;G('fab').style.display=p==='cal'?'flex':'none';const app=document.querySelector('.app');if(p==='chat'){app.classList.add('chat-mode');rChat();setTimeout(scr,50);}else{app.classList.remove('chat-mode');}if(['cal','match','stats','chat'].includes(p))setSeen(p,Date.now());render();updateNotiDots();}
 function buildCourtBtns(){const el=G('court-btns');if(!el)return;el.innerHTML=(S.courts||[]).map(c=>`<button class="court-btn" data-court="${c}">${c}</button>`).join('');if(isAdmin())el.innerHTML+=`<button class="court-btn" style="background:var(--aml);border-color:var(--am);color:var(--amd)" id="manage-courts-btn">⚙️ 관리</button>`;el.querySelectorAll('[data-court]').forEach(b=>b.addEventListener('click',()=>G('icourt').value=b.dataset.court));const mb=el.querySelector('#manage-courts-btn');if(mb)mb.addEventListener('click',()=>{cm('mo-sess');openCourtsModal();});}
 function openCourtsModal(){const el=G('courts-list');el.innerHTML=(S.courts||[]).map((c,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:.5px solid var(--bd)"><span style="flex:1;font-size:13px">${c}</span><button class="ibtn" data-di="${i}"><i class="ti ti-trash"></i></button></div>`).join('');el.querySelectorAll('[data-di]').forEach(b=>b.addEventListener('click',()=>{S.courts.splice(parseInt(b.dataset.di),1);saveS();openCourtsModal();}));om('mo-courts');}
 G('add-court-btn').addEventListener('click',()=>{const v=G('new-court').value.trim();if(!v)return;if(!S.courts)S.courts=[];S.courts.push(v);G('new-court').value='';saveS();openCourtsModal();});
 G('mo-courts-c').addEventListener('click',()=>{cm('mo-courts');om('mo-sess');buildCourtBtns();});
 G('fab').addEventListener('click',()=>{G('idate').value=selD||iso(new Date());G('icourt').value='';G('cerr').textContent='';buildCourtBtns();om('mo-sess');});
 G('msc').addEventListener('click',()=>cm('mo-sess'));
-G('mss').addEventListener('click',()=>{const date=G('idate').value,court=G('icourt').value.trim();if(!date||!court){G('cerr').textContent='날짜와 코트를 입력해주세요';setTimeout(()=>G('cerr').textContent='',3000);return;}const id='s'+Date.now();if(!S.sessions)S.sessions=[];S.sessions.unshift({id,date,time:G('itime').value,court});S.votes[id]={};S.fees[id]={total:0,paid:{}};S.penalties[id]={};selD=date;cm('mo-sess');upstrip();render();saveS();addLog('일정 추가',`${court} · ${date} ${G('itime').value}`);sendPush('🎾 새 일정이 추가됐어요!',`${court} · ${date} ${G('itime').value}`);});
+G('mss').addEventListener('click',()=>{const date=G('idate').value,court=G('icourt').value.trim();if(!date||!court){G('cerr').textContent='날짜와 코트를 입력해주세요';setTimeout(()=>G('cerr').textContent='',3000);return;}const id='s'+Date.now();if(!S.sessions)S.sessions=[];S.sessions.unshift({id,date,time:G('itime').value,court,by:myId,createdAt:Date.now()});S.votes[id]={};S.fees[id]={total:0,paid:{}};S.penalties[id]={};selD=date;cm('mo-sess');upstrip();render();saveS();addLog('일정 추가',`${court} · ${date} ${G('itime').value}`);sendPush('🎾 새 일정이 추가됐어요!',`${court} · ${date} ${G('itime').value}`);});
 G('csend').addEventListener('click',sendMsg);
 G('cinp').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}});
 G('cinp').addEventListener('input',function(){this.style.height='';this.style.height=Math.min(this.scrollHeight,80)+'px';});
@@ -886,7 +915,7 @@ function renderMatchItem(m,i,el){
         MM.score=`${as}-${bs}`;
         if(as>bs){MM.winners=(MM.teamA||teamA).slice();MM.losers=(MM.teamB||teamB).slice();}
         else{MM.winners=(MM.teamB||teamB).slice();MM.losers=(MM.teamA||teamA).slice();}
-        MM.pending=false;MM.locked=true;
+        MM.pending=false;MM.locked=true;MM.resultBy=myId;MM.resultAt=Date.now();
       }
     };
     const mkRow=(side,names)=>{
