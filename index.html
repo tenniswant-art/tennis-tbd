@@ -785,6 +785,8 @@ function renderMatchItem(m,i,el){
   // 팀 구성은 고정: 항상 teamA/teamB 기준 (없으면 winners/losers에서 1회 복원)
   const M0=S.matches.find(x=>x.id===mid)||m;
   if((!M0.teamA||!M0.teamA.length)&&M0.winners&&M0.winners.length){M0.teamA=M0.winners.slice();M0.teamB=M0.losers.slice();}
+  // 점수 입력 상태를 draw 바깥에 유지 (확정 전 입력값 보존)
+  let as=null,bs=null,scoreInit=false;
   function draw(){
     item.innerHTML='';
     const M=S.matches.find(x=>x.id===mid)||m;
@@ -793,8 +795,8 @@ function renderMatchItem(m,i,el){
     const teamB=M.teamB||[];
     const aNames=teamA.map(id=>gm(id).name).join(' · ');
     const bNames=teamB.map(id=>gm(id).name).join(' · ');
-    let as=(M.sa!=null?M.sa:null),bs=(M.sb!=null?M.sb:null);
-    if(as==null&&bs==null){const mt=(M.score||'').match(/^(\d+)-(\d+)$/);if(mt){as=parseInt(mt[1]);bs=parseInt(mt[2]);}}
+    // 최초 1회만 저장된 점수에서 초기화 (이후엔 사용자가 누른 값 유지)
+    if(!scoreInit){scoreInit=true;if(M.sa!=null)as=M.sa;if(M.sb!=null)bs=M.sb;if(as==null&&bs==null){const mt=(M.score||'').match(/^(\d+)-(\d+)$/);if(mt){as=parseInt(mt[1]);bs=parseInt(mt[2]);}}}
     // 헤더
     const head=document.createElement('div');head.style.cssText='display:flex;justify-content:space-between;align-items:center;margin-bottom:5px';
     const rcInfo=(M.round?`R${M.round}`:'')+(M.court?` 코트${M.court}`:'');head.innerHTML=`<span style="font-size:10px;padding:2px 7px;border-radius:4px;font-weight:500;background:${isS?'#fef3c7':'var(--gl)'};color:${isS?'#92400e':'var(--gd)'}">${isS?'단식':'복식'} · ${i+1}번${rcInfo?' · '+rcInfo:''}</span>`;
@@ -802,17 +804,19 @@ function renderMatchItem(m,i,el){
     del.addEventListener('click',()=>{if(del.dataset.armed==='1'){S.matches=S.matches.filter(x=>x.id!==mid);saveS();rMatch();}else{del.dataset.armed='1';del.style.color='var(--rd)';del.style.background='var(--rl)';del.style.borderRadius='5px';setTimeout(()=>{del.dataset.armed='0';del.style.color='';del.style.background='';},2000);}});
     head.appendChild(del);item.appendChild(head);
     // 점수 적용: teamA/teamB는 고정, 승패만 점수로 결정
-    const applyScore=()=>{
+    // 점수는 확정(locked) 시에만 S.matches에 반영. 그 전엔 로컬 as/bs로만 표시.
+    const M2=S.matches.find(x=>x.id===mid)||m;
+    if(M2.locked===undefined&&M2.score&&!M2.pending)M2.locked=true;
+    const locked=!!M2.locked;
+    const commitScore=()=>{
       const MM=S.matches.find(x=>x.id===mid);if(!MM)return;
       MM.sa=(as==null?null:as);MM.sb=(bs==null?null:bs);
       if(as!=null&&bs!=null&&as!==bs){
         MM.score=`${as}-${bs}`;
         if(as>bs){MM.winners=(MM.teamA||teamA).slice();MM.losers=(MM.teamB||teamB).slice();}
         else{MM.winners=(MM.teamB||teamB).slice();MM.losers=(MM.teamA||teamA).slice();}
-        MM.pending=false;
-        addLog('경기 기록',`${aNames} vs ${bNames} · ${as}-${bs}`);
-      } else {MM.score=(as!=null&&bs!=null)?`${as}-${bs}`:'';MM.winners=[];MM.losers=[];MM.pending=true;}
-      saveS();
+        MM.pending=false;MM.locked=true;
+      }
     };
     const mkRow=(side,names)=>{
       const wrap=document.createElement('div');wrap.style.cssText='margin:5px 0';
@@ -829,14 +833,31 @@ function renderMatchItem(m,i,el){
       for(let n=0;n<=7;n++){
         const b=document.createElement('button');b.type='button';b.textContent=n;
         const cur=side==='A'?as:bs;
-        b.style.cssText=`height:32px;border-radius:6px;border:.5px solid var(--bd);background:${cur===n?'var(--g)':'var(--sf)'};color:${cur===n?'#fff':'var(--tx)'};font-size:13px;font-weight:600;cursor:pointer`;
-        b.addEventListener('click',()=>{if(side==='A'){as=(as===n?null:n);}else{bs=(bs===n?null:n);}applyScore();draw();});
+        const sel=cur===n;
+        b.style.cssText=`height:32px;border-radius:6px;border:.5px solid var(--bd);background:${sel?'var(--g)':'var(--sf)'};color:${sel?'#fff':'var(--tx)'};font-size:13px;font-weight:600;cursor:${locked?'not-allowed':'pointer'};opacity:${locked&&!sel?'0.4':'1'}`;
+        if(!locked)b.addEventListener('click',()=>{if(side==='A'){as=(as===n?null:n);}else{bs=(bs===n?null:n);}draw();});
         btns.appendChild(b);
       }
       wrap.appendChild(btns);return wrap;
     };
     item.appendChild(mkRow('A',aNames));
     item.appendChild(mkRow('B',bNames));
+    // 확정 / 다시 입력 버튼
+    const ctrl=document.createElement('div');ctrl.style.cssText='margin-top:8px';
+    const bothFilled=(as!=null&&bs!=null&&as!==bs);
+    if(locked){
+      const reBtn=document.createElement('button');reBtn.className='btn btno';reBtn.style.cssText='width:100%;justify-content:center;font-size:12px';reBtn.innerHTML='✏️ 다시 입력';
+      reBtn.addEventListener('click',()=>{const MM=S.matches.find(x=>x.id===mid);if(MM){MM.locked=false;MM.pending=true;saveS();}draw();});
+      ctrl.appendChild(reBtn);
+    } else {
+      const okBtn=document.createElement('button');okBtn.className='btn btng';okBtn.style.cssText='width:100%;justify-content:center;font-size:12px';
+      okBtn.innerHTML='✓ 확정';
+      okBtn.disabled=!bothFilled;okBtn.style.opacity=bothFilled?'1':'0.4';okBtn.style.cursor=bothFilled?'pointer':'not-allowed';
+      okBtn.addEventListener('click',()=>{if(!bothFilled)return;commitScore();saveS();addLog('경기 기록',`${aNames} vs ${bNames} · ${as}-${bs}`);draw();});
+      ctrl.appendChild(okBtn);
+      if(!bothFilled){const hint=document.createElement('div');hint.style.cssText='font-size:10px;color:var(--mt);text-align:center;margin-top:4px';hint.textContent='양 팀 점수를 입력하면 확정할 수 있어요';ctrl.appendChild(hint);}
+    }
+    item.appendChild(ctrl);
   }
   draw();
 }
