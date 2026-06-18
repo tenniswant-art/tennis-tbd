@@ -63,7 +63,7 @@ h2{font-size:16px;font-weight:600;margin-bottom:12px}
 .calm{font-size:15px;font-weight:600}
 .calnav{display:flex;gap:3px}
 .calnav button{background:none;border:.5px solid var(--bd);border-radius:7px;width:28px;height:28px;cursor:pointer;color:var(--tx);font-size:14px;display:inline-flex;align-items:center;justify-content:center}
-.calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:12px}
+.calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:12px;will-change:transform;touch-action:pan-y}
 .dow{font-size:10px;color:var(--mt);text-align:center;padding:2px 0;font-weight:500}
 .day{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:7px;cursor:pointer;gap:1px;min-width:0}
 .day.empty{cursor:default}.day.sat .dn{color:var(--g)}.day.sun .dn{color:#ef4444}
@@ -764,22 +764,64 @@ function upstrip(){
 }
 // 달력 그리드 좌우 스와이프 → 월 전환
 function attachSwipe(grid){
-  let sx=0,sy=0,active=false;
-  const TH=50; // 가로 이동 임계값(px)
-  grid.addEventListener('touchstart',e=>{const t=e.touches[0];sx=t.clientX;sy=t.clientY;active=true;},{passive:true});
-  grid.addEventListener('touchend',e=>{
-    if(!active)return;active=false;
-    const t=e.changedTouches[0];const dx=t.clientX-sx,dy=t.clientY-sy;
-    // 가로 이동이 충분하고, 세로 이동보다 클 때만 (스크롤과 구분)
-    if(Math.abs(dx)>TH&&Math.abs(dx)>Math.abs(dy)*1.5){calShift(dx<0?1:-1);}
-  },{passive:true});
-  // 데스크탑 마우스 드래그도 지원
-  let mdx=0,mdown=false;
-  grid.addEventListener('mousedown',e=>{mdown=true;mdx=e.clientX;});
-  grid.addEventListener('mouseup',e=>{if(!mdown)return;mdown=false;const dx=e.clientX-mdx;if(Math.abs(dx)>TH)calShift(dx<0?1:-1);});
-  grid.addEventListener('mouseleave',()=>{mdown=false;});
+  let sx=0,sy=0,active=false,dragging=false,gridW=0;
+  const TH=50; // 페이지 전환 임계값(px)
+  const reset=(anim)=>{grid.style.transition=anim?'transform .2s ease':'none';grid.style.transform='translateX(0)';if(anim)setTimeout(()=>{grid.style.transition='';},220);};
+  // 손가락/마우스 따라 이동
+  function onStart(x,y){sx=x;sy=y;active=true;dragging=false;gridW=grid.offsetWidth||300;grid.style.transition='none';}
+  function onMove(x,y,ev){
+    if(!active)return;
+    const dx=x-sx,dy=y-sy;
+    if(!dragging){
+      // 가로가 세로보다 확실히 클 때만 드래그 시작 (세로 스크롤 보호)
+      if(Math.abs(dx)>8&&Math.abs(dx)>Math.abs(dy)*1.2){dragging=true;}
+      else if(Math.abs(dy)>10){active=false;return;} // 세로 스크롤로 판단
+      else return;
+    }
+    if(dragging){if(ev&&ev.cancelable)ev.preventDefault();const damp=dx*0.85;grid.style.transform=`translateX(${damp}px)`;grid.style.opacity=String(1-Math.min(Math.abs(dx)/gridW,0.4));}
+  }
+  function onEnd(x){
+    if(!active){return;}active=false;
+    if(!dragging){reset(false);return;}
+    const dx=x-sx;
+    grid.style.opacity='1';
+    if(Math.abs(dx)>TH){
+      // 화면 밖으로 슬라이드 후 달 전환
+      const dir=dx<0?1:-1;
+      grid.style.transition='transform .15s ease, opacity .15s ease';
+      grid.style.transform=`translateX(${dir<0?gridW:-gridW}px)`;
+      grid.style.opacity='0';
+      setTimeout(()=>calShift(dir),150);
+    } else {
+      reset(true); // 임계값 미달 → 제자리로 튕김
+    }
+  }
+  grid.addEventListener('touchstart',e=>{const t=e.touches[0];onStart(t.clientX,t.clientY);},{passive:true});
+  grid.addEventListener('touchmove',e=>{const t=e.touches[0];onMove(t.clientX,t.clientY,e);},{passive:false});
+  grid.addEventListener('touchend',e=>{const t=e.changedTouches[0];onEnd(t.clientX);},{passive:true});
+  // 데스크탑 마우스
+  grid.addEventListener('mousedown',e=>{onStart(e.clientX,e.clientY);});
+  grid.addEventListener('mousemove',e=>{if(active)onMove(e.clientX,e.clientY,e);});
+  grid.addEventListener('mouseup',e=>{onEnd(e.clientX);});
+  grid.addEventListener('mouseleave',e=>{if(active)onEnd(e.clientX);});
 }
-function calShift(dir){calM+=dir;if(calM<0){calM=11;calY--;}if(calM>11){calM=0;calY++;}selD=null;selSid=null;rCal();}
+function calShift(dir){calM+=dir;if(calM<0){calM=11;calY--;}if(calM>11){calM=0;calY++;}selD=null;selSid=null;rCal();animateCalIn(dir);}
+// 새 달이 그려진 후 반대편에서 슬라이드 인
+function animateCalIn(dir){
+  requestAnimationFrame(()=>{
+    const grid=document.querySelector('#calwrap .calgrid');if(!grid)return;
+    const w=grid.offsetWidth||300;
+    grid.style.transition='none';
+    grid.style.transform=`translateX(${dir>0?w:-w}px)`;
+    grid.style.opacity='0';
+    requestAnimationFrame(()=>{
+      grid.style.transition='transform .2s ease, opacity .2s ease';
+      grid.style.transform='translateX(0)';
+      grid.style.opacity='1';
+      setTimeout(()=>{grid.style.transition='';},220);
+    });
+  });
+}
 // 코트 색: 등록된 코트 목록 순서대로 0=노랑,1=초록,그외=빨강
 function courtColorClass(courtName){
   const idx=(S.courts||[]).indexOf(courtName);
