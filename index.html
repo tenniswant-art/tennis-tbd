@@ -315,15 +315,13 @@ function playedSessionIds(){
   return set;
 }
 function getAtt(mid){
-  const played=playedSessionIds();
-  const sessions=(S.sessions||[]).filter(s=>played.has(s.id));
-  // 같은 날 여러 세션은 멤버당 하나만 모수에 포함
-  // 해당 멤버가 '참가'한 세션이 있으면 그걸로, 없으면 첫 번째 세션
+  // 모수: 전원 투표 완료된 세션 (경기 결과 여부 무관)
+  // 같은 날 세션 여러 개면 멤버별로 yes한 세션 우선, 없으면 첫 번째만
+  const allSessions=(S.sessions||[]).filter(s=>isVoteDone(s.id));
   const byDate={};
-  sessions.forEach(s=>{
-    const d=s.date;
-    if(!byDate[d])byDate[d]=[];
-    byDate[d].push(s);
+  allSessions.forEach(s=>{
+    if(!byDate[s.date])byDate[s.date]=[];
+    byDate[s.date].push(s);
   });
   const effective=Object.values(byDate).map(group=>{
     if(group.length===1)return group[0];
