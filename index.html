@@ -316,6 +316,21 @@ function playedSessionIds(){
   return set;
 }
 
+function getBestPlayer(filter){
+  // filter: fn(match) => bool, 해당 기간 경기 필터
+  const wins={},losses={};
+  (S.matches||[]).filter(m=>m.time&&m.score&&m.winners&&m.losers&&!hasGuest(m)).filter(filter).forEach(m=>{
+    (m.winners||[]).forEach(id=>{if(!isGuestId(id)){wins[id]=(wins[id]||0)+1;}});
+    (m.losers||[]).forEach(id=>{if(!isGuestId(id)){losses[id]=(losses[id]||0)+1;}});
+  });
+  const all=new Set([...Object.keys(wins),...Object.keys(losses)]);
+  if(!all.size)return null;
+  // 승수 기준, 동률이면 승률
+  const ranked=[...all].map(id=>{const w=wins[id]||0,l=losses[id]||0;return{id,w,l,rate:w+l?w/(w+l):0};})
+    .sort((a,b)=>b.w-a.w||b.rate-a.rate);
+  const top=ranked[0];
+  return top&&top.w>0?top:null;
+}
 function getAtt(mid){
   // 모수: 확정 경기(점수+승자)가 하나라도 있는 날짜만 포함
   // 같은 날 겹치는 세션은 하루로 묶어서 카운트
@@ -1305,12 +1320,53 @@ function buildMemberLines(el){
 }
 function rStats(){
   const el=G('statslist');el.innerHTML='';
-  const elos=calcELOs(),mvp=getMonthlyMVP(),now=new Date();
-  // MVP 카드
-  const mvpCard=document.createElement('div');mvpCard.className='mvp-card';
-  if(mvp){const m=gm(mvp.id);mvpCard.innerHTML=`<div style="font-size:11px;color:rgba(255,255,255,.6);margin-bottom:4px">${now.getMonth()+1}월의 MVP 🏆</div><div style="font-size:32px;font-weight:700;color:#e8b923;margin-bottom:2px">${ini(m.name)}</div><div style="color:#fff;font-size:16px;font-weight:700">${m.name}</div><div style="color:rgba(255,255,255,.7);font-size:12px;margin-top:4px">이달 ${mvp.wins}승 🔥</div>`;}
-  else{mvpCard.innerHTML=`<div style="font-size:11px;color:rgba(255,255,255,.6);margin-bottom:4px">${now.getMonth()+1}월의 MVP 🏆</div><div style="color:rgba(255,255,255,.5);font-size:14px">이번 달 경기 없음</div>`;}
-  el.appendChild(mvpCard);
+  const elos=calcELOs(),now=new Date();
+  // Best Player 카드 (월/분기/년)
+  let mvpPeriod=sessionStorage.getItem('mvpPeriod')||'month';
+  const mvpWrap=document.createElement('div');
+  let mvpOffset=parseInt(sessionStorage.getItem('mvpOffset')||'0');
+  const renderMVP=()=>{
+    // offset: 0=현재, -1=이전, +1=다음 (미래는 막음)
+    const base=new Date(now.getFullYear(),now.getMonth(),1);
+    let yr,mo,q,label,filter;
+    if(mvpPeriod==='month'){
+      const d=new Date(base.getFullYear(),base.getMonth()+mvpOffset,1);
+      yr=d.getFullYear();mo=d.getMonth()+1;
+      label=`${yr}년 ${mo}월`;
+      filter=m=>{const dd=new Date(m.time);return dd.getFullYear()===yr&&dd.getMonth()+1===mo;};
+    } else if(mvpPeriod==='quarter'){
+      const totalQ=Math.floor(mvpOffset);
+      const curQ=Math.ceil((now.getMonth()+1)/3);
+      const absQ=(now.getFullYear()-2000)*4+curQ-1+totalQ;
+      yr=2000+Math.floor(absQ/4);q=(absQ%4+4)%4+1;
+      const qStart=(q-1)*3+1,qEnd=q*3;
+      label=`${yr}년 ${q}분기 (${qStart}~${qEnd}월)`;
+      filter=m=>{const dd=new Date(m.time);const dq=Math.ceil((dd.getMonth()+1)/3);return dd.getFullYear()===yr&&dq===q;};
+    } else {
+      yr=now.getFullYear()+mvpOffset;
+      label=`${yr}년`;
+      filter=m=>new Date(m.time).getFullYear()===yr;
+    }
+    const isPresent=mvpOffset===0;
+    const best=getBestPlayer(filter);
+    const tabs=['month','quarter','year'].map(p=>`<span data-mvpp="${p}" style="cursor:pointer;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;${mvpPeriod===p?'background:rgba(255,255,255,.25);color:#fff':'color:rgba(255,255,255,.5)'}">${{month:'월',quarter:'분기',year:'년'}[p]}</span>`).join('');
+    const navStyle='background:rgba(255,255,255,.15);border:none;color:#fff;width:26px;height:26px;border-radius:50%;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center';
+    mvpWrap.className='mvp-card';
+    const content2=best?`<div style="font-size:32px;font-weight:700;color:#e8b923;margin-bottom:2px">${ini((gm(best.id)||{name:best.id}).name)}</div><div style="color:#fff;font-size:16px;font-weight:700">${(gm(best.id)||{name:best.id}).name}</div><div style="color:rgba(255,255,255,.7);font-size:12px;margin-top:4px">${best.w}승 ${best.l}패 · 승률 ${Math.round(best.rate*100)}% 🔥</div>`:`<div style="color:rgba(255,255,255,.5);font-size:14px;margin-top:12px">해당 기간 경기 없음</div>`;
+    mvpWrap.innerHTML=`<div style="display:flex;justify-content:center;gap:4px;margin-bottom:10px">${tabs}</div><div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:8px"><button data-nav="-1" style="${navStyle}">‹</button><span style="font-size:12px;font-weight:700;color:rgba(255,255,255,.85)">${label}</span><button data-nav="1" style="${navStyle};opacity:${isPresent?0.3:1};pointer-events:${isPresent?'none':'auto'}">›</button></div><div style="font-size:11px;color:rgba(255,255,255,.6);margin-bottom:6px">Best Player 🏆</div>${content2}`;
+    mvpWrap.querySelectorAll('[data-mvpp]').forEach(t=>{t.addEventListener('click',e=>{e.stopPropagation();mvpPeriod=t.getAttribute('data-mvpp');mvpOffset=0;sessionStorage.setItem('mvpPeriod',mvpPeriod);sessionStorage.setItem('mvpOffset','0');renderMVP();});});
+    mvpWrap.querySelectorAll('[data-nav]').forEach(b=>{b.addEventListener('click',e=>{e.stopPropagation();const d=parseInt(b.getAttribute('data-nav'));mvpOffset=Math.min(0,mvpOffset+d);sessionStorage.setItem('mvpOffset',mvpOffset);renderMVP();});});
+    // 스와이프로 이전/다음
+    let _sx=0,_active=false,_drag=false;
+    mvpWrap.addEventListener('touchstart',e=>{_sx=e.touches[0].clientX;_active=true;_drag=false;},{passive:true});
+    mvpWrap.addEventListener('touchmove',e=>{if(!_active)return;const dx=e.touches[0].clientX-_sx;if(!_drag&&Math.abs(dx)>10)_drag=true;},{passive:true});
+    mvpWrap.addEventListener('touchend',e=>{if(!_drag)return;const dx=e.changedTouches[0].clientX-_sx;if(Math.abs(dx)>50){const dir=dx<0?-1:1;mvpOffset=Math.min(0,mvpOffset+dir);sessionStorage.setItem('mvpOffset',mvpOffset);renderMVP();}_active=false;_drag=false;});
+    mvpWrap.addEventListener('mousedown',e=>{_sx=e.clientX;_active=true;_drag=false;});
+    mvpWrap.addEventListener('mousemove',e=>{if(!_active)return;if(Math.abs(e.clientX-_sx)>10)_drag=true;});
+    mvpWrap.addEventListener('mouseup',e=>{if(!_drag){_active=false;return;}const dx=e.clientX-_sx;if(Math.abs(dx)>50){const dir=dx<0?-1:1;mvpOffset=Math.min(0,mvpOffset+dir);sessionStorage.setItem('mvpOffset',mvpOffset);renderMVP();}_active=false;_drag=false;});
+  };
+  renderMVP();
+  el.appendChild(mvpWrap);
   // 정렬 탭: 종합 ELO / 맞대결 / 참석률 / 지각
   const rtab=document.createElement('div');rtab.className='tabbar';rtab.style.marginBottom='10px';
   [['elo','🏆 전적'],['h2h','⚔️ 맞대결'],['att','📅 참석률'],['late','⏰ 지각']].forEach(([t,lbl])=>{const btn=document.createElement('button');btn.className='tabbtn'+(stType===t?' on':'');btn.textContent=lbl;btn.style.fontSize='12px';btn.addEventListener('click',()=>{stType=t;rtab.querySelectorAll('.tabbtn').forEach(b=>b.classList.remove('on'));btn.classList.add('on');route();});rtab.appendChild(btn);});
