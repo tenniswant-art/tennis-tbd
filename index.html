@@ -1164,13 +1164,19 @@ function addMatch(){
   } else if(sel.length===4){
     openTeamSplit(sel);
   } else if(sel.length===0){
-    // 선수 미선택: 참석자 수에 따라 자동 팝업
+    // 선수 미선택: 참석자 수에 따라 자동 처리
     if(att.length===2){
-      openAutoSelModal(att,'singles');
-    } else if(att.length>=4){
-      openAutoSelModal(att,'doubles');
+      // 2명이면 바로 단식 추가
+      if(!S.matches)S.matches=[];
+      S.matches.push({id:'g'+Date.now(),sessionId:mSess,type:'singles',teamA:[att[0].id],teamB:[att[1].id],winners:[],losers:[],score:'',pending:true,time:Date.now()});
+      picks={};saveS();rMatch();
+    } else if(att.length===4){
+      // 4명이면 바로 팀 나누기 팝업
+      openTeamSplit(att.map(m=>m.id));
     } else if(att.length===3){
       openAutoSelModal(att,'singles');
+    } else if(att.length>4){
+      openAutoSelModal(att,'doubles');
     } else {
       showErr('참석자가 2명 이상이어야 합니다');
     }
