@@ -57,7 +57,7 @@ h2{font-size:16px;font-weight:600;margin-bottom:12px}
 .pill{display:inline-flex;align-items:center;gap:2px;font-size:10px;padding:2px 7px;border-radius:5px;font-weight:500}
 .pg2{background:var(--gl);color:var(--gd)}.pr2{background:var(--rl);color:var(--rd)}.pgr{background:var(--bd);color:var(--mt)}
 .vstatus{font-size:11px;padding:4px 10px;border-radius:7px;font-weight:500;margin-left:auto}
-.vstatus.vy{background:var(--gl);color:var(--gd)}.vstatus.vn{background:var(--rl);color:var(--rd)}.vstatus.v0{background:var(--bd);color:var(--mt)}
+.vstatus.vy{background:#16a34a;color:#fff;font-weight:700}.vstatus.vn{background:var(--rl);color:var(--rd)}.vstatus.v0{background:none;border:.5px dashed var(--mt);color:var(--mt);opacity:.7}
 .vrow.mine{background:rgba(26,86,176,.04)}
 .calh{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .calm{font-size:15px;font-weight:600}
@@ -644,7 +644,7 @@ G('add-court-btn').addEventListener('click',()=>{const v=G('new-court').value.tr
 G('mo-courts-c').addEventListener('click',()=>{cm('mo-courts');om('mo-sess');buildCourtBtns();});
 G('fab').addEventListener('click',()=>{G('idate').value=selD||iso(new Date());G('icourt').value='';G('cerr').textContent='';buildCourtBtns();om('mo-sess');});
 G('msc').addEventListener('click',()=>cm('mo-sess'));
-G('mss').addEventListener('click',()=>{const date=G('idate').value,court=G('icourt').value.trim();if(!date||!court){G('cerr').textContent='날짜와 코트를 입력해주세요';setTimeout(()=>G('cerr').textContent='',3000);return;}const id='s'+Date.now();if(!S.sessions)S.sessions=[];S.sessions.unshift({id,date,time:G('itime').value,court,by:myId,createdAt:Date.now()});S.votes[id]={};S.fees[id]={total:0,paid:{}};S.penalties[id]={};selD=date;cm('mo-sess');upstrip();render();saveS();addLog('일정 추가',`${court} · ${date} ${G('itime').value}`);sendPush('🎾 새 일정이 추가됐어요!',`${court} · ${date} ${G('itime').value}`);});
+G('mss').addEventListener('click',()=>{const date=G('idate').value,court=G('icourt').value.trim();if(!date||!court){G('cerr').textContent='날짜와 코트를 입력해주세요';setTimeout(()=>G('cerr').textContent='',3000);return;}const id='s'+Date.now();if(!S.sessions)S.sessions=[];S.sessions.unshift({id,date,time:G('itime').value,court,by:myId,createdAt:Date.now()});S.votes[id]={};S.fees[id]={total:0,paid:{}};S.penalties[id]={};selD=date;selSid=id;mSess=id;pnSess=id;const _dt=new Date(date+'T00:00:00');calY=_dt.getFullYear();calM=_dt.getMonth();cm('mo-sess');upstrip();render();saveS();addLog('일정 추가',`${court} · ${date} ${G('itime').value}`);sendPush('🎾 새 일정이 추가됐어요!',`${court} · ${date} ${G('itime').value}`);});
 G('csend').addEventListener('click',sendMsg);
 G('cinp').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();}});
 G('cinp').addEventListener('input',function(){this.style.height='';this.style.height=Math.min(this.scrollHeight,80)+'px';});
