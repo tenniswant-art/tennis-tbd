@@ -332,6 +332,40 @@ function getBestPlayer(filter){
   const top=ranked[0];
   return top&&top.w>0?top:null;
 }
+function getBadges(mid){
+  const ms=[...(S.matches||[])].filter(m=>m.score&&m.winners&&m.winners.length&&!hasGuest(m)&&(m.winners.includes(mid)||(m.losers||[]).includes(mid))).sort((a,b)=>(a.time||0)-(b.time||0));
+  const w=ms.filter(m=>m.winners.includes(mid)).length,tot=ms.length;
+  const badges=[];
+  // 현재 연승
+  let cs=0;for(let i=ms.length-1;i>=0;i--){if(ms[i].winners.includes(mid))cs++;else break;}
+  // 불사조: 3연패 후 승리
+  let run=0,phoenix=false;
+  ms.forEach(m=>{if(m.winners.includes(mid)){if(run>=3)phoenix=true;run=0;}else run++;});
+  // 복식 파트너 수
+  const partners=new Set();
+  ms.filter(m=>m.type==='doubles').forEach(m=>{const team=m.winners.includes(mid)?m.winners:(m.losers||[]);team.forEach(id=>{if(id!==mid)partners.add(id);});});
+  // 트레이닝 횟수
+  const train=(S.matches||[]).filter(m=>m.type==='training'&&(m.players||[]).includes(mid)).length;
+  const played=playedSessionIds();
+  // 이번달 개근
+  const now=new Date(),ym=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const monthDays=new Set((S.sessions||[]).filter(s=>played.has(s.id)&&s.date.startsWith(ym)).map(s=>s.date));
+  const attDays=new Set((S.sessions||[]).filter(s=>played.has(s.id)&&s.date.startsWith(ym)&&(S.votes[s.id]||{})[mid]==='yes').map(s=>s.date));
+  const perfect=monthDays.size>0&&attDays.size/monthDays.size>=0.7;
+  // 최근 5경기 무패
+  const last5=ms.slice(-5);
+  const wall=last5.length===5&&last5.every(m=>m.winners.includes(mid));
+  if(cs>=3)badges.push(['🔥','3연승','현재 3연승 진행 중']);
+  if(cs>=5)badges.push(['⚡','5연승','현재 5연승 진행 중! 미쳤다']);
+  if(wall)badges.push(['🛡️','철벽','최근 5경기 전승']);
+  if(tot>=10&&w/tot>=0.7)badges.push(['👑','승률왕','승률 70% 이상 (10경기+)']);
+  if(phoenix)badges.push(['🐦‍🔥','불사조','3연패 후 부활승']);
+  if(perfect)badges.push(['📅','참석왕','이번 달 참석률 70% 이상']);
+  if(train>=3)badges.push(['🏋️','훈련벌레','트레이닝 3회 이상']);
+  const otherCnt=(S.members||[]).filter(x=>!x.guest&&x.id!==mid).length;
+  if(otherCnt>0&&partners.size>=otherCnt)badges.push(['💎','파트너 콜렉터','모든 멤버와 복식 파트너 달성']);
+  return badges;
+}
 function getAtt(mid){
   // 모수: 확정 경기(점수+승자)가 하나라도 있는 날짜만 포함
   // 같은 날 겹치는 세션은 하루로 묶어서 카운트
@@ -1180,7 +1214,17 @@ function renderMatchItem(m,i,el){
   }
   draw();
 }
-function showAssignGames(games,el){if(!el)return;el.innerHTML='';games.forEach((g,i)=>{const card=document.createElement('div');card.className='assign-game';card.innerHTML=`<div style="font-size:11px;color:var(--mt);margin-bottom:6px;font-weight:600">경기 ${i+1} · ${g.gtype==='singles'?'단식':'복식'}</div>`;const t1=document.createElement('div');t1.className='assign-team';t1.innerHTML=`<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:var(--g);color:#fff;font-weight:600">팀A</span>${g.t1.map(m=>`<div class="av" style="background:${mcol(m.id)};color:#fff;width:26px;height:26px;font-size:10px">${ini(m.name)}</div><span style="font-size:12px">${m.name}</span>`).join('')}`;const vs=document.createElement('div');vs.style.cssText='text-align:center;font-size:11px;color:var(--mt);padding:2px 0';vs.textContent='VS';const t2=document.createElement('div');t2.className='assign-team';t2.innerHTML=`<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:var(--rd);color:#fff;font-weight:600">팀B</span>${g.t2.map(m=>`<div class="av" style="background:${mcol(m.id)};color:#fff;width:26px;height:26px;font-size:10px">${ini(m.name)}</div><span style="font-size:12px">${m.name}</span>`).join('')}`;card.appendChild(t1);card.appendChild(vs);card.appendChild(t2);el.appendChild(card);});}
+function showAssignGames(games,el){if(!el)return;el.innerHTML='';games.forEach((g,i)=>{const card=document.createElement('div');card.className='assign-game';
+const hdr=document.createElement('div');hdr.style.cssText='display:flex;align-items:center;justify-content:space-between;margin-bottom:6px';
+hdr.innerHTML=`<span style="font-size:11px;color:var(--mt);font-weight:600">경기 ${i+1} · ${g.gtype==='singles'?'단식':'복식'}</span>`;
+if(games.length>1){
+  const ctrl=document.createElement('div');ctrl.style.cssText='display:flex;gap:4px';
+  const mkBtn=(txt,fn,dis)=>{const b=document.createElement('button');b.textContent=txt;b.style.cssText=`width:24px;height:24px;border-radius:6px;border:.5px solid var(--bd);background:var(--sf);color:${dis?'var(--bd)':'var(--tx)'};cursor:${dis?'default':'pointer'};font-size:12px;line-height:1`;if(!dis)b.addEventListener('click',fn);return b;};
+  ctrl.appendChild(mkBtn('↑',()=>{[games[i-1],games[i]]=[games[i],games[i-1]];showAssignGames(games,el);},i===0));
+  ctrl.appendChild(mkBtn('↓',()=>{[games[i],games[i+1]]=[games[i+1],games[i]];showAssignGames(games,el);},i===games.length-1));
+  hdr.appendChild(ctrl);
+}
+card.appendChild(hdr);const t1=document.createElement('div');t1.className='assign-team';t1.innerHTML=`<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:var(--g);color:#fff;font-weight:600">팀A</span>${g.t1.map(m=>`<div class="av" style="background:${mcol(m.id)};color:#fff;width:26px;height:26px;font-size:10px">${ini(m.name)}</div><span style="font-size:12px">${m.name}</span>`).join('')}`;const vs=document.createElement('div');vs.style.cssText='text-align:center;font-size:11px;color:var(--mt);padding:2px 0';vs.textContent='VS';const t2=document.createElement('div');t2.className='assign-team';t2.innerHTML=`<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:var(--rd);color:#fff;font-weight:600">팀B</span>${g.t2.map(m=>`<div class="av" style="background:${mcol(m.id)};color:#fff;width:26px;height:26px;font-size:10px">${ini(m.name)}</div><span style="font-size:12px">${m.name}</span>`).join('')}`;card.appendChild(t1);card.appendChild(vs);card.appendChild(t2);el.appendChild(card);});}
 function addMatch(){
   const v=S.votes[mSess]||{},att=(S.members||[]).filter(m=>v[m.id]==='yes');
   const showErr=(msg)=>{const h=document.createElement('div');h.style.cssText='color:var(--rd);font-size:12px;margin-bottom:6px';h.textContent=msg;G('mcontent').insertBefore(h,G('mcontent').firstChild);setTimeout(()=>h.remove(),3000);};
@@ -1403,6 +1447,41 @@ function rStats(){
   };
   renderMVP();
   el.appendChild(mvpWrap);
+  // 🎖️ 뱃지 섹션 (접기/펼치기)
+  const bWrap=document.createElement('div');bWrap.style.cssText='margin:12px 0';
+  const bHdr=document.createElement('div');
+  bHdr.style.cssText='display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;padding:4px 0';
+  const bOpen=sessionStorage.getItem('badgeOpen')!=='0';
+  bHdr.innerHTML=`<span style="font-size:13px;font-weight:700;color:var(--g)">🎖️ 뱃지</span><div style="flex:1;height:.5px;background:var(--bd)"></div><span style="font-size:12px;color:var(--mt)">${bOpen?'▲':'▼'}</span>`;
+  const bBody=document.createElement('div');bBody.style.display=bOpen?'block':'none';
+  bHdr.addEventListener('click',()=>{const o=bBody.style.display!=='none';bBody.style.display=o?'none':'block';bHdr.querySelector('span:last-child').textContent=o?'▼':'▲';sessionStorage.setItem('badgeOpen',o?'0':'1');});
+  bWrap.appendChild(bHdr);
+  const bCard=document.createElement('div');bCard.className='card';bCard.style.padding='0';
+  const bMembers=(S.members||[]).filter(m=>!m.guest);
+  bMembers.forEach((m,bi)=>{
+    const bs=getBadges(m.id);
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:flex-start;gap:10px;padding:10px 14px'+(bi<bMembers.length-1?';border-bottom:.5px solid var(--bd)':'');
+    const av=document.createElement('div');av.className='av';av.style.cssText=`background:${mcol(m.id)};color:#fff;flex-shrink:0`;av.textContent=ini(m.name);
+    const right=document.createElement('div');right.style.cssText='flex:1;min-width:0';
+    const nm=document.createElement('div');nm.style.cssText='font-size:12px;font-weight:600;margin-bottom:4px';nm.textContent=m.name;
+    right.appendChild(nm);
+    if(bs.length){
+      const chips=document.createElement('div');chips.style.cssText='display:flex;flex-wrap:wrap;gap:4px';
+      bs.forEach(([icon,name,desc])=>{
+        const chip=document.createElement('span');
+        chip.style.cssText='display:inline-flex;align-items:center;gap:3px;font-size:10px;padding:3px 7px;border-radius:12px;background:var(--sf);border:.5px solid var(--bd);cursor:pointer;font-weight:600';
+        chip.innerHTML=`${icon} ${name}`;
+        chip.addEventListener('click',()=>alert(`${icon} ${name}\n${desc}`));
+        chips.appendChild(chip);
+      });
+      right.appendChild(chips);
+    } else {
+      const none=document.createElement('div');none.style.cssText='font-size:10px;color:var(--mt)';none.textContent='아직 뱃지 없음';right.appendChild(none);
+    }
+    row.appendChild(av);row.appendChild(right);bCard.appendChild(row);
+  });
+  bBody.appendChild(bCard);bWrap.appendChild(bBody);el.appendChild(bWrap);
   // 정렬 탭: 종합 ELO / 맞대결 / 참석률 / 지각
   const rtab=document.createElement('div');rtab.className='tabbar';rtab.style.marginBottom='10px';
   [['elo','🏆 전적'],['h2h','⚔️ 맞대결'],['att','📅 참석률'],['late','⏰ 지각']].forEach(([t,lbl])=>{const btn=document.createElement('button');btn.className='tabbtn'+(stType===t?' on':'');btn.textContent=lbl;btn.style.fontSize='12px';btn.addEventListener('click',()=>{stType=t;rtab.querySelectorAll('.tabbtn').forEach(b=>b.classList.remove('on'));btn.classList.add('on');route();});rtab.appendChild(btn);});
