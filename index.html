@@ -261,6 +261,10 @@ h2{font-size:16px;font-weight:600;margin-bottom:12px}
   <div id="autosel-body"></div>
   <div class="mac"><button class="btn btno" id="autosel-c">취소</button><button class="btn btng" id="autosel-ok">선택 완료</button></div>
 </div></div>
+<div class="ovl" id="mo-profile"><div class="modal" style="max-height:82vh;overflow-y:auto">
+  <div id="profile-body"></div>
+  <div class="mac"><button class="btn btno" id="profile-c" style="width:100%">닫기</button></div>
+</div></div>
 <script type="module">
 import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import{getDatabase,ref,set,get,onValue}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
@@ -331,6 +335,79 @@ function getBestPlayer(filter){
     .sort((a,b)=>b.w-a.w||b.rate-a.rate);
   const top=ranked[0];
   return top&&top.w>0?top:null;
+}
+function openProfile(mid){
+  const m=gm(mid);if(m===undefined||!m)return;
+  const body=G('profile-body');body.innerHTML='';
+  const elos=calcELOs();
+  const ms=[...(S.matches||[])].filter(g=>g.score&&g.winners&&g.winners.length&&!hasGuest(g)&&(g.winners.includes(mid)||(g.losers||[]).includes(mid))).sort((a,b)=>(b.time||0)-(a.time||0));
+  const w=ms.filter(g=>g.winners.includes(mid)).length,l=ms.length-w;
+  // 헤더
+  const hdr=document.createElement('div');
+  hdr.style.cssText='display:flex;align-items:center;gap:12px;margin-bottom:14px';
+  hdr.innerHTML=`<div class="av" style="background:${mcol(mid)};color:#fff;width:52px;height:52px;font-size:18px;border-radius:14px">${ini(m.name)}</div><div style="flex:1"><div style="font-size:18px;font-weight:800">${m.name}</div><div style="font-size:11px;color:var(--mt);margin-top:2px">종합 ${w}승 ${l}패${w+l?` · 승률 ${Math.round(w/(w+l)*100)}%`:''} · 참석률 ${getAtt(mid)}%</div></div>`;
+  body.appendChild(hdr);
+  // ELO
+  const eloRow=document.createElement('div');
+  eloRow.style.cssText='display:flex;gap:8px;margin-bottom:14px';
+  const mkE=(lbl,v)=>`<div style="flex:1;background:var(--sf);border:.5px solid var(--bd);border-radius:10px;padding:8px;text-align:center"><div style="font-size:10px;color:var(--mt)">${lbl}</div><div style="font-size:17px;font-weight:800;color:var(--g)">${Math.round(v||1000)}</div></div>`;
+  eloRow.innerHTML=mkE('단식 ELO',elos.singles[mid])+mkE('복식 ELO',elos.doubles[mid]);
+  body.appendChild(eloRow);
+  // 최근 5경기
+  const sec=(title)=>{const t=document.createElement('div');t.style.cssText='font-size:12px;font-weight:700;color:var(--mt);margin:12px 0 6px';t.textContent=title;body.appendChild(t);};
+  sec('🎾 최근 5경기');
+  const rec5=document.createElement('div');rec5.style.cssText='display:flex;gap:5px;flex-wrap:wrap';
+  if(!ms.length){rec5.innerHTML='<span style="font-size:11px;color:var(--mt)">경기 기록 없음</span>';}
+  ms.slice(0,5).forEach(g=>{
+    const win=g.winners.includes(mid);
+    const chip=document.createElement('span');
+    chip.style.cssText=`font-size:11px;font-weight:700;padding:5px 9px;border-radius:8px;background:${win?'rgba(22,163,74,.15)':'var(--rl)'};color:${win?'#16a34a':'var(--rd)'}`;
+    chip.textContent=`${win?'승':'패'} ${g.type==='singles'?'단':'복'} ${g.score||''}`;
+    rec5.appendChild(chip);
+  });
+  body.appendChild(rec5);
+  // 상대 전적 → 최고 파트너 + 천적
+  const oppRec={};
+  ms.forEach(g=>{
+    const win=g.winners.includes(mid);
+    const opps=win?(g.losers||[]):g.winners;
+    opps.forEach(oid=>{if(isGuestId(oid))return;if(!oppRec[oid])oppRec[oid]={w:0,l:0};if(win)oppRec[oid].w++;else oppRec[oid].l++;});
+  });
+  // 천적: 3경기 이상 + 패가 더 많은 상대 중 승률 최저
+  const nemesis=Object.entries(oppRec).map(([oid,r])=>({oid,...r,g:r.w+r.l,rate:r.w/(r.w+r.l)}))
+    .filter(o=>o.g>=3&&o.l>o.w).sort((a,b)=>a.rate-b.rate)[0];
+  // 최고 파트너: 복식 2경기 이상 팀 중 승률 최고
+  const pRec={};
+  ms.filter(g=>g.type==='doubles').forEach(g=>{
+    const win=g.winners.includes(mid);
+    const team=win?g.winners:(g.losers||[]);
+    team.forEach(pid=>{if(pid===mid||isGuestId(pid))return;if(!pRec[pid])pRec[pid]={w:0,l:0};if(win)pRec[pid].w++;else pRec[pid].l++;});
+  });
+  const bestP=Object.entries(pRec).map(([pid,r])=>({pid,...r,g:r.w+r.l,rate:r.w/(r.w+r.l)}))
+    .filter(p=>p.g>=2).sort((a,b)=>b.rate-a.rate||b.g-a.g)[0];
+  sec('🤝 케미');
+  const chemi=document.createElement('div');chemi.style.cssText='display:flex;flex-direction:column;gap:6px';
+  const mkChemi=(icon,lbl,person,detail,color)=>`<div style="display:flex;align-items:center;gap:8px;background:var(--sf);border:.5px solid var(--bd);border-radius:10px;padding:8px 10px"><span style="font-size:16px">${icon}</span><div style="flex:1"><div style="font-size:12px;font-weight:700">${lbl}: <span style="color:${color}">${person}</span></div><div style="font-size:10px;color:var(--mt)">${detail}</div></div></div>`;
+  let chemiHTML='';
+  if(bestP){const pm=gm(bestP.pid);chemiHTML+=mkChemi('💙','최고 파트너',pm?pm.name:'?',`함께 ${bestP.w}승 ${bestP.l}패 (${Math.round(bestP.rate*100)}%)`,'#1a56b0');}
+  if(nemesis){const nm2=gm(nemesis.oid);chemiHTML+=mkChemi('😱','천적',nm2?nm2.name:'?',`상대로 ${nemesis.w}승 ${nemesis.l}패 (${Math.round(nemesis.rate*100)}%)`,'var(--rd)');}
+  if(!chemiHTML)chemiHTML='<span style="font-size:11px;color:var(--mt)">데이터가 더 쌓이면 보여요</span>';
+  chemi.innerHTML=chemiHTML;
+  body.appendChild(chemi);
+  // 뱃지
+  const bs=getBadges(mid);
+  sec('🎖️ 뱃지');
+  const bchips=document.createElement('div');bchips.style.cssText='display:flex;flex-wrap:wrap;gap:4px';
+  if(!bs.length)bchips.innerHTML='<span style="font-size:11px;color:var(--mt)">아직 뱃지 없음</span>';
+  bs.forEach(([icon,name,desc])=>{
+    const chip=document.createElement('span');
+    chip.style.cssText='display:inline-flex;align-items:center;gap:3px;font-size:10px;padding:4px 8px;border-radius:12px;background:var(--sf);border:.5px solid var(--bd);font-weight:600;cursor:pointer';
+    chip.innerHTML=`${icon} ${name}`;
+    chip.addEventListener('click',()=>alert(`${icon} ${name}\n${desc}`));
+    bchips.appendChild(chip);
+  });
+  body.appendChild(bchips);
+  om('mo-profile');
 }
 function getBadges(mid){
   const ms=[...(S.matches||[])].filter(m=>m.score&&m.winners&&m.winners.length&&!hasGuest(m)&&(m.winners.includes(mid)||(m.losers||[]).includes(mid))).sort((a,b)=>(a.time||0)-(b.time||0));
@@ -686,6 +763,7 @@ G('assign-c').addEventListener('click',()=>cm('mo-assign'));
 G('tsplit-c').addEventListener('click',()=>cm('mo-tsplit'));
 G('tsplit-ok').addEventListener('click',()=>{const teamA=Object.entries(teamSplitPicks).filter(([,p])=>p==='A').map(([k])=>k);const teamB=Object.entries(teamSplitPicks).filter(([,p])=>p==='B').map(([k])=>k);if(teamA.length!==2||teamB.length!==2){alert('팀A 2명, 팀B 2명을 정해주세요');return;}if(!S.matches)S.matches=[];S.matches.push({id:'g'+Date.now(),sessionId:mSess,type:'doubles',teamA,teamB,winners:[],losers:[],score:'',pending:true,time:Date.now()});picks={};teamSplitPicks={};teamSplitSel=[];saveS();cm('mo-tsplit');rMatch();});
 G('autosel-c').addEventListener('click',()=>{autoSelPicks={};cm('mo-autosel');});
+G('profile-c').addEventListener('click',()=>cm('mo-profile'));
 G('autosel-ok').addEventListener('click',()=>{
   const sel=Object.entries(autoSelPicks).filter(([,p])=>p).map(([k])=>k);
   if(autoSelMode==='singles'){
@@ -1434,6 +1512,7 @@ function rStats(){
     mvpWrap.className='mvp-card';
     const content2=best?`<div style="font-size:32px;font-weight:700;color:#e8b923;margin-bottom:2px">${ini((gm(best.id)||{name:best.id}).name)}</div><div style="color:#fff;font-size:16px;font-weight:700">${(gm(best.id)||{name:best.id}).name}</div><div style="color:rgba(255,255,255,.7);font-size:12px;margin-top:4px">${best.w}승 ${best.l}패 · 승률 ${Math.round(best.rate*100)}% 🔥</div>`:`<div style="color:rgba(255,255,255,.5);font-size:14px;margin-top:12px">해당 기간 경기 없음</div>`;
     mvpWrap.innerHTML=`<div style="display:flex;justify-content:center;gap:4px;margin-bottom:10px">${tabs}</div><div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:8px"><button data-nav="-1" style="${navStyle}">‹</button><span style="font-size:12px;font-weight:700;color:rgba(255,255,255,.85)">${label}</span><button data-nav="1" style="${navStyle};opacity:${isPresent?0.3:1};pointer-events:${isPresent?'none':'auto'}">›</button></div><div style="font-size:11px;color:rgba(255,255,255,.6);margin-bottom:6px">Best Player 🏆</div>${content2}`;
+    if(typeof renderSummary==='function')renderSummary(filter,label);
     mvpWrap.querySelectorAll('[data-mvpp]').forEach(t=>{t.addEventListener('click',e=>{e.stopPropagation();mvpPeriod=t.getAttribute('data-mvpp');mvpOffset=0;sessionStorage.setItem('mvpPeriod',mvpPeriod);sessionStorage.setItem('mvpOffset','0');renderMVP();});});
     mvpWrap.querySelectorAll('[data-nav]').forEach(b=>{b.addEventListener('click',e=>{e.stopPropagation();const d=parseInt(b.getAttribute('data-nav'));mvpOffset=Math.min(0,mvpOffset+d);sessionStorage.setItem('mvpOffset',mvpOffset);renderMVP();});});
     // 스와이프로 이전/다음
@@ -1445,8 +1524,51 @@ function rStats(){
     mvpWrap.addEventListener('mousemove',e=>{if(!_active)return;if(Math.abs(e.clientX-_sx)>10)_drag=true;});
     mvpWrap.addEventListener('mouseup',e=>{if(!_drag){_active=false;return;}const dx=e.clientX-_sx;if(Math.abs(dx)>50){const dir=dx<0?-1:1;mvpOffset=Math.min(0,mvpOffset+dir);sessionStorage.setItem('mvpOffset',mvpOffset);renderMVP();}_active=false;_drag=false;});
   };
+  const summaryWrap=document.createElement('div');
+  const renderSummary=(filter,label)=>{
+    summaryWrap.innerHTML='';
+    const pms=(S.matches||[]).filter(m=>m.time&&m.score&&m.winners&&m.winners.length&&!hasGuest(m)).filter(filter);
+    const trainCnt=(S.matches||[]).filter(m=>m.time&&m.type==='training').filter(filter).length;
+    if(!pms.length&&!trainCnt)return;
+    const sCnt=pms.filter(m=>m.type==='singles').length,dCnt=pms.filter(m=>m.type==='doubles').length;
+    // 다승
+    const wins={};pms.forEach(m=>{m.winners.forEach(id=>{if(!isGuestId(id))wins[id]=(wins[id]||0)+1;});});
+    const topWin=Object.entries(wins).sort((a,b)=>b[1]-a[1])[0];
+    // 승률왕 (3경기+)
+    const rec={};pms.forEach(m=>{m.winners.forEach(id=>{if(isGuestId(id))return;if(!rec[id])rec[id]={w:0,l:0};rec[id].w++;});(m.losers||[]).forEach(id=>{if(isGuestId(id))return;if(!rec[id])rec[id]={w:0,l:0};rec[id].l++;});});
+    const topRate=Object.entries(rec).map(([id,r])=>({id,...r,g:r.w+r.l,rate:r.w/(r.w+r.l)})).filter(o=>o.g>=3).sort((a,b)=>b.rate-a.rate||b.w-a.w)[0];
+    // 최강 팀 (2경기+)
+    const teams={};const pk=(a,b)=>[a,b].sort().join('|');
+    pms.filter(m=>m.type==='doubles').forEach(m=>{const add=(arr,win)=>{if(arr.length===2&&!arr.some(isGuestId)){const k=pk(arr[0],arr[1]);if(!teams[k])teams[k]={ids:arr.slice(),w:0,l:0};if(win)teams[k].w++;else teams[k].l++;}};add(m.winners,true);add(m.losers||[],false);});
+    const topTeam=Object.values(teams).map(t=>({...t,g:t.w+t.l,rate:t.w/(t.w+t.l)})).filter(t=>t.g>=2).sort((a,b)=>b.rate-a.rate||b.w-a.w)[0];
+    // 경기일 수
+    const dayCnt=new Set(pms.map(m=>new Date(m.time).toISOString().slice(0,10))).size;
+    const gn=id=>{const mm=gm(id);return mm?mm.name:'?';};
+    const lines=[];
+    lines.push(`총 <b>${pms.length}경기</b> (단식 ${sCnt} · 복식 ${dCnt}${trainCnt?` · 트레이닝 ${trainCnt}`:''}) · ${dayCnt}일`);
+    if(topWin)lines.push(`🏆 다승: <b>${gn(topWin[0])}</b> (${topWin[1]}승)`);
+    if(topRate)lines.push(`📈 승률왕: <b>${gn(topRate.id)}</b> (${Math.round(topRate.rate*100)}% · ${topRate.w}승 ${topRate.l}패)`);
+    if(topTeam)lines.push(`🤝 최강 팀: <b>${gn(topTeam.ids[0])}·${gn(topTeam.ids[1])}</b> (${topTeam.w}승 ${topTeam.l}패)`);
+    const card=document.createElement('div');card.className='card';card.style.cssText='margin-top:10px;padding:12px 14px';
+    card.innerHTML=`<div style="font-size:12px;font-weight:700;color:var(--g);margin-bottom:8px">📋 ${label} 결산</div>`+lines.map(t=>`<div style="font-size:12px;color:var(--tx);margin-top:5px;line-height:1.5">${t}</div>`).join('');
+    // 카톡 복사
+    const cbtn=document.createElement('button');
+    cbtn.className='btn btno';cbtn.style.cssText='width:100%;justify-content:center;margin-top:10px;font-size:12px;padding:8px';cbtn.textContent='💬 결산 카톡 복사';
+    cbtn.addEventListener('click',()=>{
+      const plain=[`🎾 ${label} 결산`,`총 ${pms.length}경기 (단식 ${sCnt} · 복식 ${dCnt}${trainCnt?` · 트레이닝 ${trainCnt}`:''}) · ${dayCnt}일`];
+      if(topWin)plain.push(`🏆 다승: ${gn(topWin[0])} (${topWin[1]}승)`);
+      if(topRate)plain.push(`📈 승률왕: ${gn(topRate.id)} (${Math.round(topRate.rate*100)}%)`);
+      if(topTeam)plain.push(`🤝 최강 팀: ${gn(topTeam.ids[0])}·${gn(topTeam.ids[1])} (${topTeam.w}승 ${topTeam.l}패)`);
+      const txt=plain.join('\n');
+      const done=()=>{cbtn.textContent='✓ 복사됐어요!';setTimeout(()=>{cbtn.textContent='💬 결산 카톡 복사';},2000);};
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done).catch(()=>prompt('복사:',txt));}else prompt('복사:',txt);
+    });
+    card.appendChild(cbtn);
+    summaryWrap.appendChild(card);
+  };
   renderMVP();
   el.appendChild(mvpWrap);
+  el.appendChild(summaryWrap);
   // 🎖️ 뱃지 섹션 (접기/펼치기)
   const bWrap=document.createElement('div');bWrap.style.cssText='margin:12px 0';
   const bHdr=document.createElement('div');
@@ -1479,9 +1601,9 @@ function rStats(){
     } else {
       const none=document.createElement('div');none.style.cssText='font-size:10px;color:var(--mt)';none.textContent='아직 뱃지 없음';right.appendChild(none);
     }
-    row.appendChild(av);row.appendChild(right);bCard.appendChild(row);
+    av.style.cursor='pointer';av.addEventListener('click',()=>openProfile(m.id));nm.style.cursor='pointer';nm.addEventListener('click',()=>openProfile(m.id));row.appendChild(av);row.appendChild(right);bCard.appendChild(row);
   });
-  bBody.appendChild(bCard);bWrap.appendChild(bBody);el.appendChild(bWrap);
+  bBody.appendChild(bCard);bWrap.appendChild(bBody);
   // 정렬 탭: 종합 ELO / 맞대결 / 참석률 / 지각
   const rtab=document.createElement('div');rtab.className='tabbar';rtab.style.marginBottom='10px';
   [['elo','🏆 전적'],['h2h','⚔️ 맞대결'],['att','📅 참석률'],['late','⏰ 지각']].forEach(([t,lbl])=>{const btn=document.createElement('button');btn.className='tabbtn'+(stType===t?' on':'');btn.textContent=lbl;btn.style.fontSize='12px';btn.addEventListener('click',()=>{stType=t;rtab.querySelectorAll('.tabbtn').forEach(b=>b.classList.remove('on'));btn.classList.add('on');route();});rtab.appendChild(btn);});
@@ -1490,6 +1612,7 @@ function rStats(){
   if(!['att','elo','h2h','late'].includes(stType))stType='elo';
   function route(){if(stType==='h2h'){rH2H(el2);}else if(stType==='late'){rLateRank(el2);}else{rStatsList(el2,elos);}}
   route();
+  el.appendChild(bWrap);
 }
 // 지각 랭킹: 전체 멤버 누적 지각/취소
 function rLateRank(el){
@@ -1528,7 +1651,7 @@ function rStatsList(el,elos){
       const av=document.createElement('div');av.className='av';av.style.cssText=`background:${mcol(m.id)};color:#fff`;av.textContent=ini(m.name);
       const info=document.createElement('div');info.style.flex='1';info.innerHTML=`<div style="font-size:13px;font-weight:500">${m.name}</div><div style="font-size:11px;color:var(--mt);margin-top:2px">참석률 ${val}%</div>`;
       const badge=document.createElement('div');badge.className='elo-badge';badge.textContent=`${val}%`;
-      row.appendChild(num);row.appendChild(av);row.appendChild(info);row.appendChild(badge);el.appendChild(row);
+      row.style.cursor='pointer';row.addEventListener('click',()=>openProfile(m.id));row.appendChild(num);row.appendChild(av);row.appendChild(info);row.appendChild(badge);el.appendChild(row);
     });
     return;
   }
@@ -1578,6 +1701,7 @@ function rStatsList(el,elos){
     else if(stSort==='rate'){mainVal=(totW+totL)?winRate+'%':'-';mainLbl='승률';}
     else{mainVal=avgElo;mainLbl='평균 ELO';}
     badge.innerHTML=`<div class="elo-badge">${mainVal}</div><div style="font-size:9px;color:var(--mt);margin-top:2px">${mainLbl}</div><div style="font-size:9px;color:var(--mt);margin-top:3px;line-height:1.5">단 <b style="color:var(--g)">${sElo}</b><br>복 <b style="color:#7c3aed">${dElo}</b></div>`;
+    row.style.cursor='pointer';row.addEventListener('click',()=>openProfile(m.id));
     row.appendChild(num);row.appendChild(av);row.appendChild(info);row.appendChild(badge);el.appendChild(row);
   });
 
@@ -1617,9 +1741,19 @@ function rH2H(el){
   const dTitle=document.createElement('div');dTitle.style.cssText='font-size:13px;font-weight:700;margin:6px 0 8px;padding-top:10px;border-top:.5px solid var(--bd)';dTitle.textContent='🤝 복식 팀 승률';el.appendChild(dTitle);
   const teams={};const pk=(a,b)=>[a,b].sort().join('|');
   (S.matches||[]).filter(m=>m.type==='doubles'&&m.score&&m.winners&&m.winners.length&&m.losers&&m.losers.length&&!hasGuest(m)).forEach(m=>{const addTeam=(arr,win)=>{if(arr.length===2){const k=pk(arr[0],arr[1]);if(!teams[k])teams[k]={ids:[arr[0],arr[1]],w:0,l:0};if(win)teams[k].w++;else teams[k].l++;}};addTeam(m.winners,true);addTeam(m.losers,false);});
-  const list=Object.values(teams).map(t=>({...t,g:t.w+t.l,rate:t.w+t.l?Math.round(t.w/(t.w+t.l)*100):0})).filter(t=>t.g>0).sort((a,b)=>b.rate-a.rate||b.g-a.g);
-  if(!list.length){const e=document.createElement('div');e.style.cssText='font-size:12px;color:var(--mt);text-align:center;padding:10px';e.textContent='아직 복식 기록이 없어요';el.appendChild(e);}
-  else list.forEach((t,i)=>{const n1=gm(t.ids[0]).name,n2=gm(t.ids[1]).name;const row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:.5px solid var(--bd)';row.innerHTML=`<div style="font-size:14px;min-width:22px;text-align:center">${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</div><div style="flex:1;font-size:13px;font-weight:500">${n1} · ${n2}</div><div style="font-size:12px;color:var(--mt)">${t.w}승 ${t.l}패</div><div class="elo-badge" style="background:${t.rate>=50?'rgba(22,163,74,.15)':'var(--rl)'};color:${t.rate>=50?'#16a34a':'var(--rd)'}">${t.rate}%</div>`;el.appendChild(row);});
+  const all=Object.values(teams).map(t=>({...t,g:t.w+t.l,rate:t.w+t.l?Math.round(t.w/(t.w+t.l)*100):0})).filter(t=>t.g>0);
+  const MIN_G=3;
+  const ranked=all.filter(t=>t.g>=MIN_G).sort((a,b)=>b.rate-a.rate||b.w-a.w);
+  const small=all.filter(t=>t.g<MIN_G).sort((a,b)=>b.rate-a.rate||b.g-a.g);
+  const mkRow=(t,rank)=>{const n1=gm(t.ids[0]).name,n2=gm(t.ids[1]).name;const row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:.5px solid var(--bd)'+(rank===null?';opacity:.55':'');row.innerHTML=`<div style="font-size:14px;min-width:22px;text-align:center">${rank===null?'·':rank===0?'🥇':rank===1?'🥈':rank===2?'🥉':rank+1}</div><div style="flex:1;font-size:13px;font-weight:500">${n1} · ${n2}</div><div style="font-size:12px;color:var(--mt)">${t.w}승 ${t.l}패</div><div class="elo-badge" style="background:${t.rate>=50?'rgba(22,163,74,.15)':'var(--rl)'};color:${t.rate>=50?'#16a34a':'var(--rd)'}">${t.rate}%</div>`;el.appendChild(row);};
+  if(!all.length){const e=document.createElement('div');e.style.cssText='font-size:12px;color:var(--mt);text-align:center;padding:10px';e.textContent='아직 복식 기록이 없어요';el.appendChild(e);}
+  else{
+    ranked.forEach((t,i)=>mkRow(t,i));
+    if(small.length){
+      const sh=document.createElement('div');sh.style.cssText='font-size:10px;color:var(--mt);margin:8px 0 4px';sh.textContent=`📊 표본 부족 (${MIN_G}경기 미만 · 랭킹 제외)`;el.appendChild(sh);
+      small.forEach(t=>mkRow(t,null));
+    }
+  }
 }
 function rFee(){const el=G('fcontent');el.innerHTML='';if(!(S.members||[]).length){el.innerHTML='<div class="empty">멤버가 없습니다</div>';return;}const totalUnpaid=(S.members||[]).reduce((sum,m)=>sum+getMemberUnpaid(m.id).total,0);const summary=document.createElement('div');summary.className='card';summary.style.borderLeft='3px solid var(--am)';summary.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:11px;color:var(--mt);margin-bottom:2px">전체 미납 합계</div><div style="font-size:22px;font-weight:700;color:var(--rd)">${totalUnpaid>0?won(totalUnpaid):'없음 ✓'}</div></div><div style="font-size:28px">${totalUnpaid>0?'💸':'✅'}</div></div>`;el.appendChild(summary);
   // 카톡 복사 버튼
