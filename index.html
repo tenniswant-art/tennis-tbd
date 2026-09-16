@@ -358,14 +358,34 @@ function openProfile(mid){
   // 최근 5경기
   const sec=(title)=>{const t=document.createElement('div');t.style.cssText='font-size:12px;font-weight:700;color:var(--mt);margin:12px 0 6px';t.textContent=title;body.appendChild(t);};
   sec('🎾 최근 5경기');
-  const rec5=document.createElement('div');rec5.style.cssText='display:flex;gap:5px;flex-wrap:wrap';
+  // ELO 리플레이: 경기 시점의 ELO 계산
+  const eloAt={};// matchId -> {elo, delta} for this member
+  {
+    const replay={singles:{},doubles:{}};
+    (S.members||[]).forEach(x=>{if(!x.guest){replay.singles[x.id]=1000;replay.doubles[x.id]=1000;}});
+    [...(S.matches||[])].filter(g=>g.score&&g.winners&&g.winners.length&&g.losers&&g.losers.length&&!hasGuest(g)).sort(cmpM).forEach(g=>{
+      const K=32,t=g.type==='singles'?'singles':'doubles';
+      const avgW=g.winners.reduce((s2,id)=>s2+(replay[t][id]||1000),0)/Math.max(g.winners.length,1);
+      const avgL=g.losers.reduce((s2,id)=>s2+(replay[t][id]||1000),0)/Math.max(g.losers.length,1);
+      const delta=K*(1-1/(1+Math.pow(10,(avgL-avgW)/400)));
+      g.winners.forEach(id=>{if(replay[t][id]!==undefined)replay[t][id]+=delta;});
+      g.losers.forEach(id=>{if(replay[t][id]!==undefined)replay[t][id]-=delta;});
+      if(g.winners.includes(mid)||g.losers.includes(mid)){
+        const win=g.winners.includes(mid);
+        eloAt[g.id]={elo:Math.round(replay[t][mid]||1000),delta:Math.round(win?delta:-delta)};
+      }
+    });
+  }
+  const rec5=document.createElement('div');rec5.style.cssText='display:flex;flex-direction:column;gap:5px';
   if(!ms.length){rec5.innerHTML='<span style="font-size:11px;color:var(--mt)">경기 기록 없음</span>';}
   ms.slice(0,5).forEach(g=>{
     const win=g.winners.includes(mid);
-    const chip=document.createElement('span');
-    chip.style.cssText=`font-size:11px;font-weight:700;padding:5px 9px;border-radius:8px;background:${win?'rgba(22,163,74,.15)':'var(--rl)'};color:${win?'#16a34a':'var(--rd)'}`;
-    const gd=mDate(g);chip.textContent=`${gd?gd.slice(5).replace('-','/')+' ':''}${g.type==='singles'?'단':'복'} ${win?'승':'패'} ${g.score||''}`;
-    rec5.appendChild(chip);
+    const gd=mDate(g);
+    const e=eloAt[g.id];
+    const row2=document.createElement('div');
+    row2.style.cssText=`display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:9px;background:${win?'rgba(22,163,74,.1)':'var(--rl)'}`;
+    row2.innerHTML=`<span style="font-size:11px;font-weight:800;color:${win?'#16a34a':'var(--rd)'};min-width:16px">${win?'승':'패'}</span><span style="flex:1;font-size:11px;color:var(--tx)">${gd?gd.slice(5).replace('-','/'):''} ${g.type==='singles'?'단식':'복식'} ${g.score||''}</span>${e?`<span style="font-size:11px;font-weight:700;color:var(--tx)">${e.elo}</span><span style="font-size:10px;font-weight:700;color:${e.delta>=0?'#16a34a':'var(--rd)'}">${e.delta>=0?'+':''}${e.delta}</span>`:''}`;
+    rec5.appendChild(row2);
   });
   body.appendChild(rec5);
   // 상대 전적 → 최고 파트너 + 천적
