@@ -311,9 +311,11 @@ function saveS(){storage.set(SK,JSON.stringify(S),true);}
 function saveC(){storage.set(CK,JSON.stringify(CHAT),true);}
 function saveU(){storage.set(UK,JSON.stringify({id:myId,name:myName}),false);}
 function isGuestId(id){const m=(S.members||[]).find(x=>x.id===id);return m&&m.guest;}
+function mDate(m){const s=(S.sessions||[]).find(x=>x.id===m.sessionId);return s?s.date:(m.time?new Date(m.time).toISOString().slice(0,10):'');}
+function cmpM(a,b){const da=mDate(a),db=mDate(b);if(da!==db)return da<db?-1:1;return (a.time||0)-(b.time||0);}
 function hasGuest(match){const ids=[...(match.winners||[]),...(match.losers||[]),...(match.teamA||[]),...(match.teamB||[])];return ids.some(id=>isGuestId(id));}
-function calcELOs(){const elo={singles:{},doubles:{}};(S.members||[]).forEach(m=>{if(m.guest)return;elo.singles[m.id]=1000;elo.doubles[m.id]=1000;});[...(S.matches||[])].filter(m=>m.score&&m.winners&&m.winners.length&&m.losers&&m.losers.length&&!hasGuest(m)).sort((a,b)=>(a.time||0)-(b.time||0)).forEach(m=>{const K=32,t=m.type==='singles'?'singles':'doubles';const avgW=m.winners.reduce((s,id)=>s+(elo[t][id]||1000),0)/Math.max(m.winners.length,1);const avgL=m.losers.reduce((s,id)=>s+(elo[t][id]||1000),0)/Math.max(m.losers.length,1);const delta=K*(1-1/(1+Math.pow(10,(avgL-avgW)/400)));m.winners.forEach(id=>{if(elo[t][id]!==undefined)elo[t][id]+=delta;});m.losers.forEach(id=>{if(elo[t][id]!==undefined)elo[t][id]-=delta;});});return elo;}
-function getStreak(mid,type){const ms=[...(S.matches||[])].filter(m=>m.type===type&&m.score&&m.winners&&m.losers&&!hasGuest(m)&&(m.winners.includes(mid)||m.losers.includes(mid))).sort((a,b)=>(b.time||0)-(a.time||0));let s=0;for(const m of ms){if(m.winners.includes(mid))s++;else break;}return s;}
+function calcELOs(){const elo={singles:{},doubles:{}};(S.members||[]).forEach(m=>{if(m.guest)return;elo.singles[m.id]=1000;elo.doubles[m.id]=1000;});[...(S.matches||[])].filter(m=>m.score&&m.winners&&m.winners.length&&m.losers&&m.losers.length&&!hasGuest(m)).sort(cmpM).forEach(m=>{const K=32,t=m.type==='singles'?'singles':'doubles';const avgW=m.winners.reduce((s,id)=>s+(elo[t][id]||1000),0)/Math.max(m.winners.length,1);const avgL=m.losers.reduce((s,id)=>s+(elo[t][id]||1000),0)/Math.max(m.losers.length,1);const delta=K*(1-1/(1+Math.pow(10,(avgL-avgW)/400)));m.winners.forEach(id=>{if(elo[t][id]!==undefined)elo[t][id]+=delta;});m.losers.forEach(id=>{if(elo[t][id]!==undefined)elo[t][id]-=delta;});});return elo;}
+function getStreak(mid,type){const ms=[...(S.matches||[])].filter(m=>m.type===type&&m.score&&m.winners&&m.losers&&!hasGuest(m)&&(m.winners.includes(mid)||m.losers.includes(mid))).sort((a,b)=>cmpM(b,a));let s=0;for(const m of ms){if(m.winners.includes(mid))s++;else break;}return s;}
 function playedSessionIds(){
   // 확정된 경기(점수+승자 있음)가 하나라도 있는 일정 id 집합
   const set=new Set();
@@ -340,7 +342,7 @@ function openProfile(mid){
   const m=gm(mid);if(m===undefined||!m)return;
   const body=G('profile-body');body.innerHTML='';
   const elos=calcELOs();
-  const ms=[...(S.matches||[])].filter(g=>g.score&&g.winners&&g.winners.length&&!hasGuest(g)&&(g.winners.includes(mid)||(g.losers||[]).includes(mid))).sort((a,b)=>(b.time||0)-(a.time||0));
+  const ms=[...(S.matches||[])].filter(g=>g.score&&g.winners&&g.winners.length&&!hasGuest(g)&&(g.winners.includes(mid)||(g.losers||[]).includes(mid))).sort((a,b)=>cmpM(b,a));
   const w=ms.filter(g=>g.winners.includes(mid)).length,l=ms.length-w;
   // 헤더
   const hdr=document.createElement('div');
@@ -362,7 +364,7 @@ function openProfile(mid){
     const win=g.winners.includes(mid);
     const chip=document.createElement('span');
     chip.style.cssText=`font-size:11px;font-weight:700;padding:5px 9px;border-radius:8px;background:${win?'rgba(22,163,74,.15)':'var(--rl)'};color:${win?'#16a34a':'var(--rd)'}`;
-    chip.textContent=`${win?'승':'패'} ${g.type==='singles'?'단':'복'} ${g.score||''}`;
+    const gd=mDate(g);chip.textContent=`${gd?gd.slice(5).replace('-','/')+' ':''}${g.type==='singles'?'단':'복'} ${win?'승':'패'} ${g.score||''}`;
     rec5.appendChild(chip);
   });
   body.appendChild(rec5);
@@ -410,7 +412,7 @@ function openProfile(mid){
   om('mo-profile');
 }
 function getBadges(mid){
-  const ms=[...(S.matches||[])].filter(m=>m.score&&m.winners&&m.winners.length&&!hasGuest(m)&&(m.winners.includes(mid)||(m.losers||[]).includes(mid))).sort((a,b)=>(a.time||0)-(b.time||0));
+  const ms=[...(S.matches||[])].filter(m=>m.score&&m.winners&&m.winners.length&&!hasGuest(m)&&(m.winners.includes(mid)||(m.losers||[]).includes(mid))).sort(cmpM);
   const w=ms.filter(m=>m.winners.includes(mid)).length,tot=ms.length;
   const badges=[];
   // 현재 연승
@@ -491,8 +493,15 @@ function feeShare(s){
   const v=S.votes[s.id]||{},fee=S.fees[s.id]||{total:0,paid:{}};
   const att=(S.members||[]).filter(m=>v[m.id]==='yes');
   const result={};
-  if(!fee.total||!att.length)return result;
+  if(!fee.total)return result;
   const mode=fee.mode||'split';
+  if(mode==='cancel'){
+    // 취소 위약금: 전원(게스트 제외) N빵
+    const all=(S.members||[]).filter(m=>!m.guest);
+    if(all.length){const per=Math.round(fee.total/all.length);all.forEach(m=>{result[m.id]=per;});}
+    return result;
+  }
+  if(!att.length)return result;
   if(mode==='treat'&&fee.payer){
     // 한 사람 몰아주기
     result[fee.payer]=fee.total;
@@ -615,7 +624,7 @@ function multiCourtSchedule(members,courts,rounds,mode){
   return{schedule,playCnt,restCnt,singlesCnt,doublesCnt};
 }
 function getMemberUnpaid(mid){let total=0,cnt=0;(S.sessions||[]).forEach(s=>{const fee=S.fees[s.id]||{total:0,paid:{}};if(fee.paid&&fee.paid[mid])return;const share=feeShare(s);if(share[mid]>0){total+=share[mid];cnt++;}});return{total,cnt};}
-function markAllPaid(mid){const mm=(S.members||[]).find(x=>x.id===mid);(S.sessions||[]).forEach(s=>{const v=S.votes[s.id]||{};if(v[mid]!=='yes')return;if(!S.fees[s.id])S.fees[s.id]={total:0,paid:{}};S.fees[s.id].paid[mid]=true;});saveS();if(mm)addLog('회비',`${mm.name} 전체 완납`);rPenalty();}
+function markAllPaid(mid){const mm=(S.members||[]).find(x=>x.id===mid);(S.sessions||[]).forEach(s=>{const share=feeShare(s);if(!(share[mid]>0))return;if(!S.fees[s.id])S.fees[s.id]={total:0,paid:{}};if(!S.fees[s.id].paid)S.fees[s.id].paid={};S.fees[s.id].paid[mid]=true;});saveS();if(mm)addLog('회비',`${mm.name} 전체 완납`);rPenalty();}
 function urlB64(b){const p='='.repeat((4-b.length%4)%4),r=(b+p).replace(/-/g,'+').replace(/_/g,'/');return Uint8Array.from([...atob(r)].map(c=>c.charCodeAt(0)));}
 async function initPush(){if(!('serviceWorker' in navigator)||!('PushManager' in window))return;try{const reg=await navigator.serviceWorker.register('/sw.js');const perm=await Notification.requestPermission();if(perm!=='granted')return;const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlB64(VAPID_PUB)});storage.set('subscriptions/'+myId,JSON.stringify(sub),true);}catch(e){}}
 async function sendPush(title,body,excludeId=null){try{const r=await storage.get('subscriptions',true);if(!r?.value)return;const subsObj=JSON.parse(r.value);const subscriptions=Object.entries(subsObj).filter(([id,s])=>s&&id!==excludeId).map(([,s])=>s);if(!subscriptions.length)return;fetch('/api/notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,body,subscriptions})});}catch(e){}}
@@ -1039,8 +1048,35 @@ const totalCells=first+dim;const trail=(7-totalCells%7)%7;
 const nextY=calM===11?calY+1:calY,nextM=calM===11?0:calM+1,nextMs=`${nextY}-${String(nextM+1).padStart(2,'0')}`;
 for(let i=1;i<=trail;i++){const nds=`${nextMs}-${String(i).padStart(2,'0')}`;const nsess=sbd[nds]||[];const nplayed=nsess.some(s=>playedIds.has(s.id));const nmissed=!nplayed&&nsess.length>0&&nds<ts;const e=document.createElement('div');e.className=['day',nplayed?'played':'',nmissed?'missed':'',nsess.length?'has':''].filter(Boolean).join(' ');e.style.opacity='0.35';e.style.cursor='pointer';const edn=document.createElement('div');edn.className='dn';edn.textContent=i;e.appendChild(edn);if(nsess.length){const dots=document.createElement('div');dots.className='edots';nsess.forEach(s=>{const dot=document.createElement('div');dot.className='edot '+(isVoteDone(s.id)?'done':courtColorClass(s.court));dots.appendChild(dot);});e.appendChild(dots);}else{const esp=document.createElement('div');esp.style.height='5px';e.appendChild(esp);}e.addEventListener('click',()=>{calM+=1;if(calM>11){calM=0;calY++;}selD=nds;selSid=null;rCal();animateCalIn(1);});grid.appendChild(e);}
 attachSwipe(grid);w.appendChild(grid);
-if(selD){const ds=sbd[selD]||[],panel=document.createElement('div');panel.className='spanel';const ph=document.createElement('div');ph.className='sphdr';const pt=document.createElement('span');pt.style.cssText='font-size:13px;font-weight:600;flex:1';pt.textContent=fmt(selD);ph.appendChild(pt);if(isAdmin()){const padd=document.createElement('button');padd.className='ibtn';padd.innerHTML='<i class="ti ti-plus"></i>';padd.addEventListener('click',()=>{G('idate').value=selD;G('icourt').value='';G('cerr').textContent='';buildCourtBtns();om('mo-sess');});ph.appendChild(padd);}panel.appendChild(ph);if(!ds.length){const em=document.createElement('div');em.style.cssText='padding:10px 12px;font-size:12px;color:var(--mt)';em.textContent='일정 없음';panel.appendChild(em);}else ds.forEach(s=>{const v=S.votes[s.id]||{},_cm=(S.members||[]).filter(m=>!m.guest||v[m.id]),yes=_cm.filter(m=>v[m.id]==='yes').length,pend=_cm.filter(m=>!v[m.id]).length;const item=document.createElement('div');item.className='sitem';const top=document.createElement('div');top.style.cssText='display:flex;align-items:flex-start;justify-content:space-between';const left=document.createElement('div');left.innerHTML=`<div style="font-size:13px;font-weight:600">${s.court}</div><div style="font-size:11px;color:var(--mt)">${s.time||''}</div><div style="margin-top:5px;display:flex;gap:4px"><span class="pill pg2">✓${yes}명</span>${pend?`<span class="pill pgr">${pend}명 미응답</span>`:''}</div>`;top.appendChild(left);if(isAdmin()){const del=document.createElement('button');del.className='ibtn';del.innerHTML='<i class="ti ti-trash"></i>';const sid=s.id;del.addEventListener('click',e=>{e.stopPropagation();if(pSD===sid){clearTimeout(pST);pSD=null;delSess(sid);}else{if(pSD){clearTimeout(pST);pSD=null;rCal();return;}pSD=sid;del.style.cssText='color:var(--rd);background:var(--rl);border-radius:5px';pST=setTimeout(()=>{pSD=null;rCal();},2500);}});top.appendChild(del);}item.appendChild(top);item.addEventListener('click',()=>{selSid=(selSid===s.id)?null:s.id;rCal();});panel.appendChild(item);});w.appendChild(panel);}
-if(selSid){const s=(S.sessions||[]).find(x=>x.id===selSid);if(s){const v=S.votes[s.id]||{};const vp=document.createElement('div');vp.className='vpanel';const vh=document.createElement('div');vh.className='vphdr';const back=document.createElement('button');back.className='ibtn';back.innerHTML='<i class="ti ti-arrow-left"></i>';back.addEventListener('click',()=>{selSid=null;rCal();});const vt=document.createElement('span');vt.className='vptit';vt.textContent=s.court;vh.appendChild(back);vh.appendChild(vt);vp.appendChild(vh);(S.members||[]).filter(m=>!m.guest||(S.votes[s.id]||{})[m.id]).forEach(m=>{const val=v[m.id],isMe=m.id===myId,canEdit=isMe||isAdmin();const row=document.createElement('div');row.className='vrow'+(isMe?' mine':'');const av=document.createElement('div');av.className='av';av.textContent=ini(m.name);av.style.cssText=`background:${mcol(m.id)};color:#fff`;const nm=document.createElement('div');nm.style.cssText='flex:1;font-size:13px;font-weight:500';nm.innerHTML=m.name+(isMe?' <span style="font-size:10px;color:var(--g);font-weight:600">• 나</span>':'');if(canEdit){const btns=document.createElement('div');btns.className='vbtns';['yes','no'].forEach(vote=>{const b=document.createElement('button');b.className='sm'+(val===vote?' '+vote:(vote==='yes'?' yes-hl':''));b.textContent=vote==='yes'?'참가':'불참';const sid=s.id,mid=m.id,mn2=m.name;b.addEventListener('click',()=>tVote(sid,mid,vote,mn2,s.court));btns.appendChild(b);});row.appendChild(av);row.appendChild(nm);row.appendChild(btns);}else{const badge=document.createElement('span');badge.className='vstatus'+(val==='yes'?' vy':val==='no'?' vn':' v0');badge.textContent=val==='yes'?'✓ 참가':val==='no'?'✗ 불참':'미응답';row.appendChild(av);row.appendChild(nm);row.appendChild(badge);}vp.appendChild(row);});
+if(selD){const ds=sbd[selD]||[],panel=document.createElement('div');panel.className='spanel';const ph=document.createElement('div');ph.className='sphdr';const pt=document.createElement('span');pt.style.cssText='font-size:13px;font-weight:600;flex:1';pt.textContent=fmt(selD);ph.appendChild(pt);if(isAdmin()){const padd=document.createElement('button');padd.className='ibtn';padd.innerHTML='<i class="ti ti-plus"></i>';padd.addEventListener('click',()=>{G('idate').value=selD;G('icourt').value='';G('cerr').textContent='';buildCourtBtns();om('mo-sess');});ph.appendChild(padd);}panel.appendChild(ph);if(!ds.length){const em=document.createElement('div');em.style.cssText='padding:10px 12px;font-size:12px;color:var(--mt)';em.textContent='일정 없음';panel.appendChild(em);}else ds.forEach(s=>{const v=S.votes[s.id]||{},_cm=(S.members||[]).filter(m=>!m.guest||v[m.id]),yes=_cm.filter(m=>v[m.id]==='yes').length,pend=_cm.filter(m=>!v[m.id]).length;const item=document.createElement('div');item.className='sitem';const top=document.createElement('div');top.style.cssText='display:flex;align-items:flex-start;justify-content:space-between';const left=document.createElement('div');left.innerHTML=`<div style="font-size:13px;font-weight:600">${s.court}</div><div style="font-size:11px;color:var(--mt)">${s.time||''}</div><div style="margin-top:5px;display:flex;gap:4px"><span class="pill pg2">✓${yes}명</span>${pend?`<span class="pill pgr">${pend}명 미응답</span>`:''}</div>`;top.appendChild(left);if(isAdmin()){const del=document.createElement('button');del.className='ibtn';del.innerHTML='<i class="ti ti-trash"></i>';const sid=s.id;del.addEventListener('click',e=>{e.stopPropagation();if(pSD===sid){clearTimeout(pST);pSD=null;delSess(sid);}else{if(pSD){clearTimeout(pST);pSD=null;rCal();return;}pSD=sid;del.style.cssText='color:var(--rd);background:var(--rl);border-radius:5px';pST=setTimeout(()=>{pSD=null;rCal();},2500);}});top.appendChild(del);}item.appendChild(top);
+// 취소 위약금 정산: 무산된(경기기록 없는 과거) 세션 → 등록자 또는 관리자
+const _isMissed=s.date<ts&&!playedSessionIds().has(s.id);
+const _canSettle=(s.by===myId)||isAdmin();
+const _fee=S.fees[s.id]||{};
+if(_isMissed&&_fee.mode==='cancel'&&_fee.total){
+  const info2=document.createElement('div');info2.style.cssText='margin-top:6px;font-size:11px;color:var(--am);font-weight:600';info2.textContent=`⚠️ 취소 위약금 ${won(_fee.total)} · 전원 ${won(Math.round(_fee.total/Math.max((S.members||[]).filter(m=>!m.guest).length,1)))}씩`;item.appendChild(info2);
+} else if(_isMissed&&_canSettle){
+  const pbtn=document.createElement('button');
+  pbtn.className='btn btno';pbtn.style.cssText='width:100%;justify-content:center;margin-top:8px;padding:7px;font-size:11px;border-color:var(--am);color:var(--am)';
+  pbtn.textContent='⚠️ 취소 위약금 정산';
+  const sid2=s.id;
+  pbtn.addEventListener('click',e=>{
+    e.stopPropagation();
+    const amt=prompt('취소 위약금 총액을 입력하세요 (원)');
+    if(!amt)return;
+    const n=parseInt(String(amt).replace(/[^0-9]/g,''));
+    if(!n||n<=0){alert('올바른 금액을 입력해주세요');return;}
+    const cnt=(S.members||[]).filter(m=>!m.guest).length;
+    if(!confirm(`위약금 ${won(n)}을 멤버 전원 ${cnt}명이 ${won(Math.round(n/cnt))}씩 분담합니다. 진행할까요?`))return;
+    S.fees[sid2]={total:n,mode:'cancel',paid:{}};
+    saveS();addLog('위약금',`${s.court} ${s.date} 취소 위약금 ${won(n)} 정산 (전원 분담)`);
+    sendPush('⚠️ 취소 위약금 정산',`${s.court} ${s.date} · 1인 ${won(Math.round(n/cnt))}`);
+    rCal();
+  });
+  item.appendChild(pbtn);
+}
+item.addEventListener('click',()=>{selSid=(selSid===s.id)?null:s.id;rCal();});panel.appendChild(item);});w.appendChild(panel);}
+if(selSid){const s=(S.sessions||[]).find(x=>x.id===selSid);if(s){const v=S.votes[s.id]||{};const vp=document.createElement('div');vp.className='vpanel';const vh=document.createElement('div');vh.className='vphdr';const back=document.createElement('button');back.className='ibtn';back.innerHTML='<i class="ti ti-arrow-left"></i>';back.addEventListener('click',()=>{selSid=null;rCal();});const vt=document.createElement('span');vt.className='vptit';vt.textContent=s.court;vh.appendChild(back);vh.appendChild(vt);vp.appendChild(vh);(S.members||[]).filter(m=>!m.guest||(S.votes[s.id]||{})[m.id]).forEach(m=>{const val=v[m.id],isMe=m.id===myId,canEdit=true;const row=document.createElement('div');row.className='vrow'+(isMe?' mine':'');const av=document.createElement('div');av.className='av';av.textContent=ini(m.name);av.style.cssText=`background:${mcol(m.id)};color:#fff`;const nm=document.createElement('div');nm.style.cssText='flex:1;font-size:13px;font-weight:500';nm.innerHTML=m.name+(isMe?' <span style="font-size:10px;color:var(--g);font-weight:600">• 나</span>':'');if(canEdit){const btns=document.createElement('div');btns.className='vbtns';['yes','no'].forEach(vote=>{const b=document.createElement('button');b.className='sm'+(val===vote?' '+vote:(vote==='yes'?' yes-hl':''));b.textContent=vote==='yes'?'참가':'불참';const sid=s.id,mid=m.id,mn2=m.name;b.addEventListener('click',()=>tVote(sid,mid,vote,mn2,s.court));btns.appendChild(b);});row.appendChild(av);row.appendChild(nm);row.appendChild(btns);}else{const badge=document.createElement('span');badge.className='vstatus'+(val==='yes'?' vy':val==='no'?' vn':' v0');badge.textContent=val==='yes'?'✓ 참가':val==='no'?'✗ 불참':'미응답';row.appendChild(av);row.appendChild(nm);row.appendChild(badge);}vp.appendChild(row);});
   // 관리자: 게스트 추가 (세션 귀속)
   if(isAdmin()){
     const gRow=document.createElement('div');
@@ -1491,7 +1527,7 @@ function rStats(){
       const d=new Date(base.getFullYear(),base.getMonth()+mvpOffset,1);
       yr=d.getFullYear();mo=d.getMonth()+1;
       label=`${yr}년 ${mo}월`;
-      filter=m=>{const dd=new Date(m.time);return dd.getFullYear()===yr&&dd.getMonth()+1===mo;};
+      filter=m=>mDate(m).startsWith(`${yr}-${String(mo).padStart(2,'0')}`);
     } else if(mvpPeriod==='quarter'){
       const totalQ=Math.floor(mvpOffset);
       const curQ=Math.ceil((now.getMonth()+1)/3);
@@ -1499,11 +1535,11 @@ function rStats(){
       yr=2000+Math.floor(absQ/4);q=(absQ%4+4)%4+1;
       const qStart=(q-1)*3+1,qEnd=q*3;
       label=`${yr}년 ${q}분기 (${qStart}~${qEnd}월)`;
-      filter=m=>{const dd=new Date(m.time);const dq=Math.ceil((dd.getMonth()+1)/3);return dd.getFullYear()===yr&&dq===q;};
+      filter=m=>{const d0=mDate(m);if(!d0.startsWith(String(yr)))return false;return Math.ceil(parseInt(d0.slice(5,7))/3)===q;};
     } else {
       yr=now.getFullYear()+mvpOffset;
       label=`${yr}년`;
-      filter=m=>new Date(m.time).getFullYear()===yr;
+      filter=m=>mDate(m).startsWith(String(yr));
     }
     const isPresent=mvpOffset===0;
     const best=getBestPlayer(filter);
@@ -1542,7 +1578,7 @@ function rStats(){
     pms.filter(m=>m.type==='doubles').forEach(m=>{const add=(arr,win)=>{if(arr.length===2&&!arr.some(isGuestId)){const k=pk(arr[0],arr[1]);if(!teams[k])teams[k]={ids:arr.slice(),w:0,l:0};if(win)teams[k].w++;else teams[k].l++;}};add(m.winners,true);add(m.losers||[],false);});
     const topTeam=Object.values(teams).map(t=>({...t,g:t.w+t.l,rate:t.w/(t.w+t.l)})).filter(t=>t.g>=2).sort((a,b)=>b.rate-a.rate||b.w-a.w)[0];
     // 경기일 수
-    const dayCnt=new Set(pms.map(m=>new Date(m.time).toISOString().slice(0,10))).size;
+    const dayCnt=new Set(pms.map(m=>mDate(m))).size;
     const gn=id=>{const mm=gm(id);return mm?mm.name:'?';};
     const lines=[];
     lines.push(`총 <b>${pms.length}경기</b> (단식 ${sCnt} · 복식 ${dCnt}${trainCnt?` · 트레이닝 ${trainCnt}`:''}) · ${dayCnt}일`);
