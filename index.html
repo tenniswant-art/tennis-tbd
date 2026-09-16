@@ -623,7 +623,7 @@ function multiCourtSchedule(members,courts,rounds,mode){
   }
   return{schedule,playCnt,restCnt,singlesCnt,doublesCnt};
 }
-function getMemberUnpaid(mid){let total=0,cnt=0;(S.sessions||[]).forEach(s=>{const fee=S.fees[s.id]||{total:0,paid:{}};if(fee.paid&&fee.paid[mid])return;const share=feeShare(s);if(share[mid]>0){total+=share[mid];cnt++;}});return{total,cnt};}
+function getMemberUnpaid(mid){let total=0,cnt=0;(S.sessions||[]).forEach(s=>{const fee=S.fees[s.id]||{total:0,paid:{}};if(fee.paid&&fee.paid[mid])return;const share=feeShare(s);if(share[mid]>0){total+=share[mid];cnt++;}});return{total,cnt,raw:total,credit:0};}
 function markAllPaid(mid){const mm=(S.members||[]).find(x=>x.id===mid);(S.sessions||[]).forEach(s=>{const share=feeShare(s);if(!(share[mid]>0))return;if(!S.fees[s.id])S.fees[s.id]={total:0,paid:{}};if(!S.fees[s.id].paid)S.fees[s.id].paid={};S.fees[s.id].paid[mid]=true;});saveS();if(mm)addLog('회비',`${mm.name} 전체 완납`);rPenalty();}
 function urlB64(b){const p='='.repeat((4-b.length%4)%4),r=(b+p).replace(/-/g,'+').replace(/_/g,'/');return Uint8Array.from([...atob(r)].map(c=>c.charCodeAt(0)));}
 async function initPush(){if(!('serviceWorker' in navigator)||!('PushManager' in window))return;try{const reg=await navigator.serviceWorker.register('/sw.js');const perm=await Notification.requestPermission();if(perm!=='granted')return;const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlB64(VAPID_PUB)});storage.set('subscriptions/'+myId,JSON.stringify(sub),true);}catch(e){}}
@@ -631,7 +631,7 @@ async function sendPush(title,body,excludeId=null){try{const r=await storage.get
 async function load(){
   try{const r=await storage.get(SK,true);if(r?.value){const d=fixFB(JSON.parse(r.value));if(d)S=d;}}catch(e){}
   try{const r=await storage.get(CK,true);if(r?.value){const d=fixFB(JSON.parse(r.value));if(d)CHAT=d;}}catch(e){}
-  if(!S.votes)S.votes={};if(!S.fees)S.fees={};if(!S.penalties)S.penalties={};if(!S.members)S.members=[];
+  if(!S.votes)S.votes={};if(!S.fees)S.fees={};if(!S.penalties)S.penalties={};if(!S.credits)S.credits={};if(!S.members)S.members=[];
   if(!S.sessions)S.sessions=[];if(!S.matches)S.matches=[];
   if(!S.courts||!S.courts.length)S.courts=[...DEFAULT_COURTS];
   if(!S.actlog)S.actlog=[];
@@ -641,7 +641,7 @@ async function load(){
   let _migrated=false;(S.matches||[]).forEach(m=>{if(!m.score&&m.winners&&m.winners.length){if(!m.teamA||!m.teamA.length){m.teamA=m.winners.slice();m.teamB=(m.losers||[]).slice();}m.winners=[];m.losers=[];m.pending=true;_migrated=true;}});
   if(!CHAT.messages)CHAT.messages=[];if(S.adminId===undefined)S.adminId=null;
   try{const r=await storage.get(UK,false);if(r?.value){const u=JSON.parse(r.value);const f=S.members.find(m=>m.id===u.id);if(f&&f.pin){myId=u.id;myName=f.name;}}}catch(e){}
-  onValue(ref(db,SK),snap=>{if(!snap.exists())return;const fresh=fixFB(snap.val());if(!fresh)return;S=fresh;if(!S.votes)S.votes={};if(!S.fees)S.fees={};if(!S.penalties)S.penalties={};if(!S.members)S.members=[];if(!S.sessions)S.sessions=[];if(!S.matches)S.matches=[];if(!S.courts||!S.courts.length)S.courts=[...DEFAULT_COURTS];if(!S.actlog)S.actlog=[];if(!S.ballPrices)S.ballPrices={...DEFAULT_BALLS};if(!S.courtTimes)S.courtTimes={};upstrip();render();updateNotiDots();});
+  onValue(ref(db,SK),snap=>{if(!snap.exists())return;const fresh=fixFB(snap.val());if(!fresh)return;S=fresh;if(!S.votes)S.votes={};if(!S.fees)S.fees={};if(!S.penalties)S.penalties={};if(!S.credits)S.credits={};if(!S.members)S.members=[];if(!S.sessions)S.sessions=[];if(!S.matches)S.matches=[];if(!S.courts||!S.courts.length)S.courts=[...DEFAULT_COURTS];if(!S.actlog)S.actlog=[];if(!S.ballPrices)S.ballPrices={...DEFAULT_BALLS};if(!S.courtTimes)S.courtTimes={};upstrip();render();updateNotiDots();});
   onValue(ref(db,CK),snap=>{if(!snap.exists())return;const fresh=fixFB(snap.val());if(!fresh||!fresh.messages)return;if(fresh.messages.length>CHAT.messages.length){CHAT=fresh;if(page==='chat'){rChat();scr();setSeen('chat',Date.now());}updateNotiDots();}});
   buildNav();
   G('loading').classList.add('hide');
@@ -1050,27 +1050,25 @@ for(let i=1;i<=trail;i++){const nds=`${nextMs}-${String(i).padStart(2,'0')}`;con
 attachSwipe(grid);w.appendChild(grid);
 if(selD){const ds=sbd[selD]||[],panel=document.createElement('div');panel.className='spanel';const ph=document.createElement('div');ph.className='sphdr';const pt=document.createElement('span');pt.style.cssText='font-size:13px;font-weight:600;flex:1';pt.textContent=fmt(selD);ph.appendChild(pt);if(isAdmin()){const padd=document.createElement('button');padd.className='ibtn';padd.innerHTML='<i class="ti ti-plus"></i>';padd.addEventListener('click',()=>{G('idate').value=selD;G('icourt').value='';G('cerr').textContent='';buildCourtBtns();om('mo-sess');});ph.appendChild(padd);}panel.appendChild(ph);if(!ds.length){const em=document.createElement('div');em.style.cssText='padding:10px 12px;font-size:12px;color:var(--mt)';em.textContent='일정 없음';panel.appendChild(em);}else ds.forEach(s=>{const v=S.votes[s.id]||{},_cm=(S.members||[]).filter(m=>!m.guest||v[m.id]),yes=_cm.filter(m=>v[m.id]==='yes').length,pend=_cm.filter(m=>!v[m.id]).length;const item=document.createElement('div');item.className='sitem';const top=document.createElement('div');top.style.cssText='display:flex;align-items:flex-start;justify-content:space-between';const left=document.createElement('div');left.innerHTML=`<div style="font-size:13px;font-weight:600">${s.court}</div><div style="font-size:11px;color:var(--mt)">${s.time||''}</div><div style="margin-top:5px;display:flex;gap:4px"><span class="pill pg2">✓${yes}명</span>${pend?`<span class="pill pgr">${pend}명 미응답</span>`:''}</div>`;top.appendChild(left);if(isAdmin()){const del=document.createElement('button');del.className='ibtn';del.innerHTML='<i class="ti ti-trash"></i>';const sid=s.id;del.addEventListener('click',e=>{e.stopPropagation();if(pSD===sid){clearTimeout(pST);pSD=null;delSess(sid);}else{if(pSD){clearTimeout(pST);pSD=null;rCal();return;}pSD=sid;del.style.cssText='color:var(--rd);background:var(--rl);border-radius:5px';pST=setTimeout(()=>{pSD=null;rCal();},2500);}});top.appendChild(del);}item.appendChild(top);
 // 취소 위약금 정산: 무산된(경기기록 없는 과거) 세션 → 등록자 또는 관리자
-const _isMissed=s.date<ts&&!playedSessionIds().has(s.id);
+const _isMissed=s.date<ts&&!playedSessionIds().has(s.id)&&(s.court||'').includes('망실');
 const _canSettle=(s.by===myId)||isAdmin();
 const _fee=S.fees[s.id]||{};
 if(_isMissed&&_fee.mode==='cancel'&&_fee.total){
-  const info2=document.createElement('div');info2.style.cssText='margin-top:6px;font-size:11px;color:var(--am);font-weight:600';info2.textContent=`⚠️ 취소 위약금 ${won(_fee.total)} · 전원 ${won(Math.round(_fee.total/Math.max((S.members||[]).filter(m=>!m.guest).length,1)))}씩`;item.appendChild(info2);
+  const _payerM=_fee.payer?gm(_fee.payer):null;const _n=Math.max((S.members||[]).filter(m=>!m.guest).length,1);const _per=Math.round(_fee.total/_n);const info2=document.createElement('div');info2.style.cssText='margin-top:6px;font-size:11px;color:var(--am);font-weight:600;line-height:1.5';info2.innerHTML=`⚠️ 취소 위약금 ${won(_fee.total)} · 1인 ${won(_per)}${_payerM?`<br>선결제: ${_payerM.name} · 총무→${_payerM.name} ${won(_fee.total-_per)} 지급`:''}`;item.appendChild(info2);
 } else if(_isMissed&&_canSettle){
   const pbtn=document.createElement('button');
   pbtn.className='btn btno';pbtn.style.cssText='width:100%;justify-content:center;margin-top:8px;padding:7px;font-size:11px;border-color:var(--am);color:var(--am)';
-  pbtn.textContent='⚠️ 취소 위약금 정산';
+  pbtn.textContent='⚠️ 취소 위약금 정산 (2,250원)';
   const sid2=s.id;
   pbtn.addEventListener('click',e=>{
     e.stopPropagation();
-    const amt=prompt('취소 위약금 총액을 입력하세요 (원)');
-    if(!amt)return;
-    const n=parseInt(String(amt).replace(/[^0-9]/g,''));
-    if(!n||n<=0){alert('올바른 금액을 입력해주세요');return;}
+    const n=2250; // 망실 취소 위약금 고정
     const cnt=(S.members||[]).filter(m=>!m.guest).length;
-    if(!confirm(`위약금 ${won(n)}을 멤버 전원 ${cnt}명이 ${won(Math.round(n/cnt))}씩 분담합니다. 진행할까요?`))return;
-    S.fees[sid2]={total:n,mode:'cancel',paid:{}};
-    saveS();addLog('위약금',`${s.court} ${s.date} 취소 위약금 ${won(n)} 정산 (전원 분담)`);
-    sendPush('⚠️ 취소 위약금 정산',`${s.court} ${s.date} · 1인 ${won(Math.round(n/cnt))}`);
+    if(!confirm(`위약금 ${won(n)}을 전원 ${cnt}명이 ${won(Math.round(n/cnt))}씩 분담합니다.\n· 본인(선결제) 몫은 자동 완납\n· 나머지 ${cnt-1}명은 총무에게 납부\n· 총무는 본인에게 ${won(n-Math.round(n/cnt))} 지급\n진행할까요?`))return;
+    const payer=myId;const per=Math.round(n/cnt);
+    S.fees[sid2]={total:n,mode:'cancel',payer,paid:{[payer]:true}};
+    saveS();addLog('위약금',`${s.court} ${s.date} 취소 위약금 ${won(n)} 정산 (선결제 ${myName||''} · 총무→정산자 ${won(n-per)} 지급 필요)`);
+    sendPush('⚠️ 취소 위약금 정산',`${s.court} ${s.date} · 1인 ${won(per)}`);
     rCal();
   });
   item.appendChild(pbtn);
